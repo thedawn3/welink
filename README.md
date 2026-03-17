@@ -158,9 +158,31 @@ decrypted/
     └── ...
 ```
 
-**第三步：启动 WeLink**
+**第三步：放置解密后的数据库**
 
-将 `decrypted/` 目录放在与 `welink/` 同级的位置，然后：
+将上一步生成的 `decrypted/` 目录放在与 `welink/` 仓库**同级**的位置，目录结构如下：
+
+```
+~/（或任意父目录）
+├── welink/            ← 本仓库
+│   ├── backend/
+│   ├── frontend/
+│   ├── docker-compose.yml
+│   └── ...
+└── decrypted/         ← 解密后的数据，放在这里
+    ├── contact/
+    │   └── contact.db
+    └── message/
+        ├── message_0.db
+        ├── message_1.db
+        └── ...
+```
+
+> wechat-decrypt 生成的 `decrypted/` 目录内部已是上述结构，直接移动过来即可，无需手动调整。
+
+**第四步：启动 WeLink**
+
+确认 `decrypted/` 与 `welink/` 同级后，执行：
 
 ```bash
 cd welink
@@ -217,6 +239,8 @@ analysis:
 ## API 文档
 
 启动后访问 [localhost:3000/swagger/](http://localhost:3000/swagger/) 查看完整接口文档。
+
+更多技术细节（数据库结构、索引流程、情感分析算法等）见 [docs/](docs/README.md)。
 
 ## 数据安全
 
