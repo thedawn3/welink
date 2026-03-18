@@ -258,4 +258,4 @@ analysis:
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=runzhliu/WeLink&type=Date)](https://star-history.com/#runzhliu/WeLink&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=runzhliu/welink&type=Date)](https://star-history.com/#runzhliu/welink&Date)
