@@ -88,8 +88,9 @@ type ContactService struct {
 	cacheMu          sync.RWMutex
 	isIndexing       bool
 	isInitialized    bool // 标记初始化是否完成
-	groupDetailCache map[string]*GroupDetail // 群聊详情内存缓存（lazy load）
-	groupDetailMu    sync.RWMutex
+	groupDetailCache     map[string]*GroupDetail // 群聊详情内存缓存（lazy load）
+	groupDetailMu        sync.RWMutex
+	groupDetailComputing map[string]bool // 正在后台计算中的群聊
 	filterFrom       int64 // 全局时间范围过滤（Unix 秒，0=不限）
 	filterTo         int64
 }
@@ -169,7 +170,8 @@ func NewContactService(mgr *db.DBManager, cfg *config.Config) *ContactService {
 		msgRepo:          repository.NewMessageRepository(mgr),
 		cfg:              &cfg.Analysis,
 		tz:               loc,
-		groupDetailCache: make(map[string]*GroupDetail),
+		groupDetailCache:     make(map[string]*GroupDetail),
+		groupDetailComputing: make(map[string]bool),
 	}
 	svc.segmenter.LoadDict()
 
@@ -193,6 +195,7 @@ func (s *ContactService) Reinitialize(from, to int64) {
 	// 清空群聊缓存
 	s.groupDetailMu.Lock()
 	s.groupDetailCache = make(map[string]*GroupDetail)
+	s.groupDetailComputing = make(map[string]bool)
 	s.groupDetailMu.Unlock()
 
 	go func() {
@@ -1055,16 +1058,36 @@ func decodeGroupContent(raw []byte, ct int64) string {
 	return string(raw)
 }
 
-// GetGroupDetail 群聊深度画像（lazy load + 内存缓存）
+// GetGroupDetail 群聊深度画像（lazy load + 内存缓存，异步计算）
+// 首次调用立即返回 nil 并在后台开始计算，前端应轮询直到返回非 nil
 func (s *ContactService) GetGroupDetail(username string) *GroupDetail {
 	// 先查缓存
 	s.groupDetailMu.RLock()
-	if cached, ok := s.groupDetailCache[username]; ok {
-		s.groupDetailMu.RUnlock()
-		return cached
-	}
+	cached, inCache := s.groupDetailCache[username]
+	computing := s.groupDetailComputing[username]
 	s.groupDetailMu.RUnlock()
 
+	if inCache {
+		return cached
+	}
+	if computing {
+		return nil // 正在计算中，让前端继续轮询
+	}
+
+	// 标记为计算中，启动后台 goroutine
+	s.groupDetailMu.Lock()
+	if s.groupDetailComputing[username] || s.groupDetailCache[username] != nil {
+		s.groupDetailMu.Unlock()
+		return nil
+	}
+	s.groupDetailComputing[username] = true
+	s.groupDetailMu.Unlock()
+
+	go s.computeGroupDetail(username)
+	return nil
+}
+
+func (s *ContactService) computeGroupDetail(username string) {
 	tableName := db.GetTableName(username)
 	detail := &GroupDetail{DailyHeatmap: make(map[string]int)}
 	memberMap := make(map[string]int64)
@@ -1163,12 +1186,11 @@ func (s *ContactService) GetGroupDetail(username string) *GroupDetail {
 	sort.Slice(detail.TopWords, func(i, j int) bool { return detail.TopWords[i].Count > detail.TopWords[j].Count })
 	if len(detail.TopWords) > 30 { detail.TopWords = detail.TopWords[:30] }
 
-	// 写入缓存
+	// 写入缓存，清除 computing 标记
 	s.groupDetailMu.Lock()
 	s.groupDetailCache[username] = detail
+	delete(s.groupDetailComputing, username)
 	s.groupDetailMu.Unlock()
-
-	return detail
 }
 
 // GroupChatMessage 群聊单条消息（含发言者显示名）

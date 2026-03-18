@@ -46,10 +46,21 @@ export const GroupDetailModal: React.FC<GroupDetailModalProps> = ({ group, onClo
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    groupsApi.getDetail(group.username).then((d) => {
-      setDetail(d);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    let cancelled = false;
+    const poll = () => {
+      groupsApi.getDetail(group.username).then((d) => {
+        if (cancelled) return;
+        if (d) {
+          setDetail(d);
+          setLoading(false);
+        } else {
+          // 后台还在计算，2秒后重试
+          setTimeout(() => { if (!cancelled) poll(); }, 2000);
+        }
+      }).catch(() => { if (!cancelled) setLoading(false); });
+    };
+    poll();
+    return () => { cancelled = true; };
   }, [group.username]);
 
   const handleSearch = useCallback(async (q: string) => {
