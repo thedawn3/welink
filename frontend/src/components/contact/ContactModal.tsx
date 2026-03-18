@@ -283,7 +283,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose, on
               正在分析情感...
             </div>
           ) : sentiment ? (
-            <SentimentChart data={sentiment} />
+            <SentimentChart data={sentiment} username={contact.username} contactName={displayName} includeMine={includeMine} />
           ) : (
             <div className="text-center text-gray-300 py-12">暂无情感数据</div>
           )

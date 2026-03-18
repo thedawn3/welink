@@ -700,6 +700,72 @@ func (s *ContactService) GetDayMessages(username, date string) []ChatMessage {
 	return msgs
 }
 
+// GetMonthMessages 返回指定联系人某月的纯文本消息（local_type=1），用于情感分析详情查看
+func (s *ContactService) GetMonthMessages(username, month string, includeMine bool) []ChatMessage {
+	tableName := db.GetTableName(username)
+
+	// month 格式: "2024-03"，转换为月份首尾时间戳
+	t, err := time.ParseInLocation("2006-01", month, s.tz)
+	if err != nil {
+		return nil
+	}
+	monthStart := t.Unix()
+	// 下个月第一天
+	var nextMonth time.Time
+	if t.Month() == 12 {
+		nextMonth = time.Date(t.Year()+1, 1, 1, 0, 0, 0, 0, s.tz)
+	} else {
+		nextMonth = time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, s.tz)
+	}
+	monthEnd := nextMonth.Unix()
+
+	var msgs []ChatMessage
+	for _, mdb := range s.dbMgr.MessageDBs {
+		var contactRowID int64 = -1
+		mdb.QueryRow(fmt.Sprintf("SELECT rowid FROM Name2Id WHERE user_name = %q", username)).Scan(&contactRowID)
+
+		senderFilter := ""
+		if !includeMine && contactRowID >= 0 {
+			senderFilter = fmt.Sprintf(" AND real_sender_id = %d", contactRowID)
+		}
+
+		rows, err := mdb.Query(fmt.Sprintf(
+			"SELECT create_time, message_content, COALESCE(WCDB_CT_message_content,0), COALESCE(real_sender_id,0) FROM [%s] WHERE local_type=1 AND create_time >= %d AND create_time < %d%s ORDER BY create_time ASC",
+			tableName, monthStart, monthEnd, senderFilter,
+		))
+		if err != nil {
+			continue
+		}
+		for rows.Next() {
+			var ts int64
+			var rawContent []byte
+			var ct, senderID int64
+			rows.Scan(&ts, &rawContent, &ct, &senderID)
+
+			content := decodeGroupContent(rawContent, ct)
+			content = strings.TrimSpace(content)
+			if content == "" {
+				continue
+			}
+
+			isMine := contactRowID < 0 || senderID != contactRowID
+			timeStr := time.Unix(ts, 0).In(s.tz).Format("01-02 15:04")
+			msgs = append(msgs, ChatMessage{
+				Time:    timeStr,
+				Content: content,
+				IsMine:  isMine,
+				Type:    1,
+			})
+		}
+		rows.Close()
+	}
+
+	if msgs == nil {
+		return []ChatMessage{}
+	}
+	return msgs
+}
+
 func (s *ContactService) GetWordCloud(username string, includeMine bool) []WordCount {
 	tableName := db.GetTableName(username)
 	// 先收集文本，关闭 DB 连接后再分词
