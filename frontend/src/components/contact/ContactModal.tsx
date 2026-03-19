@@ -111,7 +111,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose, on
       onClick={onClose}
     >
       <div
-        className="dk-card bg-white rounded-t-[32px] sm:rounded-[48px] w-full sm:max-w-5xl overflow-y-auto max-h-[92vh] shadow-2xl relative p-6 sm:p-16 animate-in slide-in-from-bottom sm:zoom-in duration-300"
+        className="dk-card bg-white rounded-t-[32px] sm:rounded-[48px] w-full sm:max-w-5xl overflow-y-auto max-h-[calc(100dvh-5rem)] sm:max-h-[92vh] shadow-2xl relative p-4 sm:p-8 lg:p-16 animate-in slide-in-from-bottom sm:zoom-in duration-300"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top-right actions */}
@@ -215,7 +215,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose, on
                   if (t === 'sentiment') fetchSentiment(contact.username, includeMine);
                   if (t === 'search') setTimeout(() => searchInputRef.current?.focus(), 50);
                 }}
-                className={`px-5 py-2 rounded-t-xl text-sm font-bold transition border-b-2 -mb-px ${
+                className={`px-3 sm:px-5 py-2 rounded-t-xl text-xs sm:text-sm font-bold transition border-b-2 -mb-px ${
                   tab === t
                     ? 'text-[#07c160] border-[#07c160]'
                     : 'text-gray-400 border-transparent hover:text-gray-600'

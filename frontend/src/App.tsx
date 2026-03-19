@@ -128,6 +128,13 @@ function App() {
     );
   }, [contacts, search]);
 
+  const hotContacts = useMemo(() => {
+    const now = Date.now() / 1000;
+    return contacts.filter(
+      (c) => c.total_messages > 0 && now - new Date(c.last_message_time).getTime() / 1000 < 7 * 86400
+    );
+  }, [contacts]);
+
   const healthStatus: HealthStatus = useMemo(() => {
     if (!contacts.length) return { hot: 0, warm: 0, cold: 0 };
 
@@ -270,6 +277,8 @@ function App() {
               <RelationshipHeatmap
                 health={healthStatus}
                 totalContacts={contacts.length}
+                hotContacts={hotContacts}
+                onContactClick={handleContactClick}
               />
             </div>
 
@@ -281,12 +290,12 @@ function App() {
 
             {/* Late Night Ranking */}
             <div className="mb-6 sm:mb-8">
-              <LateNightRanking data={globalStats} />
+              <LateNightRanking data={globalStats} contacts={contacts} onContactClick={handleContactClick} />
             </div>
 
             {/* Contact Table */}
             <div className="mb-8">
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
                 <h2 className="dk-text text-2xl font-black text-[#1d1d1f]">
                   联系人列表
                   <span className="text-gray-400 text-lg ml-3 font-semibold">
@@ -300,7 +309,7 @@ function App() {
                     placeholder="搜索联系人..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="pl-9 pr-4 py-2 w-56 bg-white border border-gray-200 rounded-xl text-sm font-medium placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#07c160]/20 focus:border-[#07c160] transition-all duration-200"
+                    className="pl-9 pr-4 py-2 w-36 sm:w-56 bg-white border border-gray-200 rounded-xl text-sm font-medium placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#07c160]/20 focus:border-[#07c160] transition-all duration-200"
                   />
                 </div>
               </div>

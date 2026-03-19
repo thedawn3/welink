@@ -97,7 +97,7 @@ export const GroupDetailModal: React.FC<GroupDetailModalProps> = ({ group, onClo
       onClick={onClose}
     >
       <div
-        className="dk-card bg-white rounded-t-[32px] sm:rounded-[48px] w-full sm:max-w-4xl overflow-y-auto max-h-[92vh] shadow-2xl relative p-6 sm:p-12"
+        className="dk-card bg-white rounded-t-[32px] sm:rounded-[48px] w-full sm:max-w-4xl overflow-y-auto max-h-[calc(100dvh-5rem)] sm:max-h-[92vh] shadow-2xl relative p-4 sm:p-8 lg:p-12"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="absolute top-5 right-5 flex items-center gap-2">
@@ -235,7 +235,7 @@ export const GroupDetailModal: React.FC<GroupDetailModalProps> = ({ group, onClo
                       <span className={`w-5 text-xs font-black text-right flex-shrink-0 ${
                         i === 0 ? 'text-yellow-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-orange-400' : 'text-gray-300'
                       }`}>{i + 1}</span>
-                      <div className="flex items-center gap-1.5 w-36 flex-shrink-0 min-w-0">
+                      <div className="flex items-center gap-1.5 w-24 sm:w-36 flex-shrink-0 min-w-0">
                         <span
                           className={`text-sm font-semibold dk-text truncate ${contact ? 'text-[#07c160] cursor-pointer hover:underline' : 'text-[#1d1d1f]'}`}
                           onClick={() => contact && onContactClick(contact)}
@@ -418,12 +418,12 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ allContacts, onContactCl
       <div className="grid grid-cols-2 gap-4">
         <div className="dk-card bg-white dk-border border border-gray-100 rounded-2xl p-5">
           <Users size={20} className="text-[#10aeff] mb-2" strokeWidth={2.5} />
-          <div className="dk-text text-3xl font-black text-[#1d1d1f]">{groups.length}</div>
+          <div className="dk-text text-2xl sm:text-3xl font-black text-[#1d1d1f]">{groups.length}</div>
           <div className="dk-text-muted text-xs text-gray-500 mt-1">群聊总数</div>
         </div>
         <div className="dk-card bg-white dk-border border border-gray-100 rounded-2xl p-5">
           <MessageSquare size={20} className="text-[#07c160] mb-2" strokeWidth={2.5} />
-          <div className="dk-text text-3xl font-black text-[#1d1d1f]">
+          <div className="dk-text text-2xl sm:text-3xl font-black text-[#1d1d1f]">
             {(groups.reduce((s, g) => s + g.total_messages, 0) / 10000).toFixed(1)}万
           </div>
           <div className="dk-text-muted text-xs text-gray-500 mt-1">群消息总量</div>
