@@ -47,3 +47,7 @@ CLAUDE.md
 .tmp/
 pr/
 REFACTORING.md
+
+# Python cache
+__pycache__/
+*.pyc
