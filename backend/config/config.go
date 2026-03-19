@@ -24,6 +24,10 @@ type DataConfig struct {
 	// Dir 解密后的微信数据目录，默认 ../decrypted（本地开发）或 /app/data（Docker）。
 	// 也可通过环境变量 DATA_DIR 覆盖。
 	Dir string `yaml:"dir"`
+
+	// MsgDir 微信媒体资源目录，包含图片/视频/文件等大体积资源。
+	// 为空时表示不挂载媒体资源访问。
+	MsgDir string `yaml:"msg_dir"`
 }
 
 type AnalysisConfig struct {
@@ -64,7 +68,8 @@ func defaults() Config {
 			Port: "8080",
 		},
 		Data: DataConfig{
-			Dir: "../decrypted",
+			Dir:    "../decrypted",
+			MsgDir: "",
 		},
 		Analysis: AnalysisConfig{
 			Timezone:             "Asia/Shanghai",
@@ -104,6 +109,9 @@ func Load(configPath string) *Config {
 	// 环境变量覆盖（向后兼容旧用法）
 	if v := os.Getenv("DATA_DIR"); v != "" {
 		cfg.Data.Dir = v
+	}
+	if v := os.Getenv("MSG_DIR"); v != "" {
+		cfg.Data.MsgDir = v
 	}
 	if v := os.Getenv("PORT"); v != "" {
 		cfg.Server.Port = v

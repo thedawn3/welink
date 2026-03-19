@@ -38,19 +38,17 @@ type LateNightEntry struct {
 }
 
 type GlobalStats struct {
-	TotalFriends      int               `json:"total_friends"`
-	ZeroMsgFriends    int               `json:"zero_msg_friends"`
-	TotalMessages     int64             `json:"total_messages"`
-	BusiestDay        string            `json:"busiest_day"`
-	BusiestDayCount   int               `json:"busiest_day_count"`
-	MidnightChamp     string            `json:"midnight_champ"`
-	EmojiKing         string            `json:"emoji_king"`
-	MonthlyTrend      map[string]int    `json:"monthly_trend"`
-	GroupMonthlyTrend map[string]int    `json:"group_monthly_trend"`
-	HourlyHeatmap     [24]int           `json:"hourly_heatmap"`
-	GroupHourlyHeatmap [24]int          `json:"group_hourly_heatmap"`
-	TypeMix           map[string]int    `json:"type_mix"`
-	LateNightRanking  []LateNightEntry  `json:"late_night_ranking"`
+	TotalFriends     int              `json:"total_friends"`
+	ZeroMsgFriends   int              `json:"zero_msg_friends"`
+	TotalMessages    int64            `json:"total_messages"`
+	BusiestDay       string           `json:"busiest_day"`
+	BusiestDayCount  int              `json:"busiest_day_count"`
+	MidnightChamp    string           `json:"midnight_champ"`
+	EmojiKing        string           `json:"emoji_king"`
+	MonthlyTrend     map[string]int   `json:"monthly_trend"`
+	HourlyHeatmap    [24]int          `json:"hourly_heatmap"`
+	TypeMix          map[string]int   `json:"type_mix"`
+	LateNightRanking []LateNightEntry `json:"late_night_ranking"`
 }
 
 type WordCount struct {
@@ -60,24 +58,22 @@ type WordCount struct {
 
 // ContactDetail 用于单个联系人的深度分析（按需查询，不在启动时计算）
 type ContactDetail struct {
-	HourlyDist        [24]int        `json:"hourly_dist"`
-	WeeklyDist        [7]int         `json:"weekly_dist"`
-	DailyHeatmap      map[string]int `json:"daily_heatmap"` // "2023-01-15" -> count
-	TheirMonthlyTrend map[string]int `json:"their_monthly_trend"` // "2024-01" -> count（对方）
-	MyMonthlyTrend    map[string]int `json:"my_monthly_trend"`    // "2024-01" -> count（我）
-	LateNightCount    int64          `json:"late_night_count"`
-	MoneyCount        int64          `json:"money_count"`
-	InitiationCnt     int64          `json:"initiation_count"`  // 主动发起对话次数（间隔>6h）
-	TotalSessions     int64          `json:"total_sessions"`
+	HourlyDist     [24]int        `json:"hourly_dist"`
+	WeeklyDist     [7]int         `json:"weekly_dist"`
+	DailyHeatmap   map[string]int `json:"daily_heatmap"` // "2023-01-15" -> count
+	LateNightCount int64          `json:"late_night_count"`
+	MoneyCount     int64          `json:"money_count"`
+	InitiationCnt  int64          `json:"initiation_count"` // 主动发起对话次数（间隔>6h）
+	TotalSessions  int64          `json:"total_sessions"`
 }
 
 type ContactStatsExtended struct {
 	model.ContactStats
-	FirstMsg         string             `json:"first_msg"`
-	EmojiCnt         int                `json:"emoji_count"`
-	TypePct          map[string]float64 `json:"type_pct"`
-	TypeCnt          map[string]int     `json:"type_cnt"`
-	SharedGroupsCount int               `json:"shared_groups_count"`
+	FirstMsg          string             `json:"first_msg"`
+	EmojiCnt          int                `json:"emoji_count"`
+	TypePct           map[string]float64 `json:"type_pct"`
+	TypeCnt           map[string]int     `json:"type_cnt"`
+	SharedGroupsCount int                `json:"shared_groups_count"`
 }
 
 type ContactService struct {
@@ -91,10 +87,9 @@ type ContactService struct {
 	global           GlobalStats
 	cacheMu          sync.RWMutex
 	isIndexing       bool
-	isInitialized    bool // 标记初始化是否完成
-	groupDetailCache     map[string]*GroupDetail // 群聊详情内存缓存（lazy load）
-	groupDetailMu        sync.RWMutex
-	groupDetailComputing map[string]bool // 正在后台计算中的群聊
+	isInitialized    bool                    // 标记初始化是否完成
+	groupDetailCache map[string]*GroupDetail // 群聊详情内存缓存（lazy load）
+	groupDetailMu    sync.RWMutex
 	filterFrom       int64 // 全局时间范围过滤（Unix 秒，0=不限）
 	filterTo         int64
 }
@@ -163,6 +158,21 @@ var STOP_WORDS = map[string]bool{
 	"…": true, "～": true, "/": true, "、": true,
 }
 
+var businessContactKeywords = []string{
+	"官方", "客服", "服务", "商家", "店", "门店", "商城", "外卖", "快递", "物流", "骑手", "配送",
+	"通知", "助手", "平台", "银行", "证券", "理财", "招聘", "电商", "售后", "团购", "收款", "发票",
+}
+
+var marketingContactKeywords = []string{
+	"优惠", "折扣", "活动", "推广", "营销", "返现", "下单", "拼团", "秒杀", "福利", "会员", "抽奖",
+	"领券", "买一送一", "加群", "上新", "爆款", "特价",
+	"代发", "补单", "刷单", "拉新", "拉粉", "吸粉", "涨粉", "代运营", "招商", "推广人",
+}
+
+var altAccountKeywords = []string{
+	"小号", "备用", "备胎号", "工作号", "测试号", "测试", "bot", "机器人", "同步号",
+}
+
 func NewContactService(mgr *db.DBManager, cfg *config.Config) *ContactService {
 	loc, err := time.LoadLocation(cfg.Analysis.Timezone)
 	if err != nil {
@@ -174,8 +184,7 @@ func NewContactService(mgr *db.DBManager, cfg *config.Config) *ContactService {
 		msgRepo:          repository.NewMessageRepository(mgr),
 		cfg:              &cfg.Analysis,
 		tz:               loc,
-		groupDetailCache:     make(map[string]*GroupDetail),
-		groupDetailComputing: make(map[string]bool),
+		groupDetailCache: make(map[string]*GroupDetail),
 	}
 	svc.segmenter.LoadDict()
 
@@ -185,6 +194,61 @@ func NewContactService(mgr *db.DBManager, cfg *config.Config) *ContactService {
 		svc.Reinitialize(cfg.Analysis.DefaultInitFrom, cfg.Analysis.DefaultInitTo)
 	}
 	return svc
+}
+
+func classifyContactKind(c model.Contact) (kind string, isBiz bool, likelyMarketing bool, isLikelyAlt bool) {
+	nameParts := []string{c.Username, c.Remark, c.Nickname, c.Alias, c.Description}
+	joined := strings.ToLower(strings.Join(nameParts, " "))
+	kind = "normal"
+
+	for _, keyword := range altAccountKeywords {
+		if strings.Contains(joined, strings.ToLower(keyword)) {
+			isLikelyAlt = true
+			kind = "small_account"
+			break
+		}
+	}
+
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(c.Username)), "gh_") {
+		isBiz = true
+		kind = "business"
+	}
+	for _, keyword := range businessContactKeywords {
+		if strings.Contains(joined, strings.ToLower(keyword)) {
+			isBiz = true
+			if kind == "normal" {
+				kind = "business"
+			}
+			break
+		}
+	}
+	for _, keyword := range marketingContactKeywords {
+		if strings.Contains(joined, strings.ToLower(keyword)) {
+			likelyMarketing = true
+			if kind == "normal" || kind == "business" {
+				kind = "marketing"
+			}
+			break
+		}
+	}
+	if c.DeleteFlag != 0 && kind == "normal" {
+		kind = "deleted"
+	}
+	return kind, isBiz, likelyMarketing, isLikelyAlt
+}
+
+func deriveDeletedStatus(c model.Contact, hasHistory bool) bool {
+	if c.DeleteFlag != 0 {
+		return true
+	}
+	if !hasHistory {
+		return false
+	}
+	uname := normalizeAnalysisUsername(c.Username)
+	if strings.HasPrefix(uname, "gh_") || strings.Contains(uname, "@openim") {
+		return false
+	}
+	return c.Flag&3 == 0
 }
 
 // Reinitialize 用新的时间范围重新索引（前端调用）
@@ -199,7 +263,6 @@ func (s *ContactService) Reinitialize(from, to int64) {
 	// 清空群聊缓存
 	s.groupDetailMu.Lock()
 	s.groupDetailCache = make(map[string]*GroupDetail)
-	s.groupDetailComputing = make(map[string]bool)
 	s.groupDetailMu.Unlock()
 
 	go func() {
@@ -248,18 +311,87 @@ func (s *ContactService) timeWhere() string {
 	return ""
 }
 
-func (s *ContactService) performAnalysis() {
-	rows, err := s.dbMgr.ContactDB.Query("SELECT username, nick_name, remark, alias, flag, COALESCE(big_head_url,''), COALESCE(small_head_url,'') FROM contact WHERE verify_flag=0")
-	if err != nil { return }
+func normalizeAnalysisUsername(username string) string {
+	return strings.ToLower(strings.TrimSpace(username))
+}
+
+func isUnsupportedAnalysisUsername(username string) bool {
+	uname := normalizeAnalysisUsername(username)
+	return uname == "" || strings.HasSuffix(uname, "@chatroom")
+}
+
+func shouldKeepDefaultContact(c model.Contact, deleteFlag int) bool {
+	uname := normalizeAnalysisUsername(c.Username)
+	if isUnsupportedAnalysisUsername(uname) || strings.HasPrefix(uname, "gh_") {
+		return false
+	}
+	return deleteFlag != 0 || (c.Flag&3 != 0) || strings.TrimSpace(c.Remark) != ""
+}
+
+func (s *ContactService) loadContactsForAnalysis() []model.Contact {
+	rows, err := s.dbMgr.ContactDB.Query(
+		"SELECT username, nick_name, remark, alias, flag, COALESCE(description,''), COALESCE(big_head_url,''), COALESCE(small_head_url,''), delete_flag FROM contact WHERE verify_flag=0",
+	)
+	if err != nil {
+		return nil
+	}
 	defer rows.Close()
 
-	var contacts []model.Contact
+	selected := make(map[string]model.Contact)
+
 	for rows.Next() {
 		var c model.Contact
-		rows.Scan(&c.Username, &c.Nickname, &c.Remark, &c.Alias, &c.Flag, &c.BigHeadURL, &c.SmallHeadURL)
-		uname := strings.ToLower(c.Username)
-		if strings.HasSuffix(uname, "@chatroom") || strings.HasPrefix(uname, "gh_") || uname == "" { continue }
-		if (c.Flag&3 != 0) || (strings.TrimSpace(c.Remark) != "") { contacts = append(contacts, c) }
+		var deleteFlag int
+		if err := rows.Scan(&c.Username, &c.Nickname, &c.Remark, &c.Alias, &c.Flag, &c.Description, &c.BigHeadURL, &c.SmallHeadURL, &deleteFlag); err != nil {
+			continue
+		}
+		hasHistory := s.msgRepo.HasIndexedTable(c.Username)
+		c.DeleteFlag = deleteFlag
+		c.IsDeleted = deriveDeletedStatus(c, hasHistory)
+		c.ContactKind, c.IsBiz, c.LikelyMarketing, c.IsLikelyAlt = classifyContactKind(c)
+		if isUnsupportedAnalysisUsername(c.Username) {
+			continue
+		}
+
+		if shouldKeepDefaultContact(c, deleteFlag) {
+			selected[c.Username] = c
+			continue
+		}
+		if hasHistory {
+			selected[c.Username] = c
+		}
+	}
+
+	contacts := make([]model.Contact, 0, len(selected))
+	for _, c := range selected {
+		contacts = append(contacts, c)
+	}
+	sort.Slice(contacts, func(i, j int) bool {
+		left := strings.TrimSpace(contacts[i].Remark)
+		if left == "" {
+			left = strings.TrimSpace(contacts[i].Nickname)
+		}
+		if left == "" {
+			left = contacts[i].Username
+		}
+
+		right := strings.TrimSpace(contacts[j].Remark)
+		if right == "" {
+			right = strings.TrimSpace(contacts[j].Nickname)
+		}
+		if right == "" {
+			right = contacts[j].Username
+		}
+
+		return left < right
+	})
+	return contacts
+}
+
+func (s *ContactService) performAnalysis() {
+	contacts := s.loadContactsForAnalysis()
+	if contacts == nil {
+		return
 	}
 
 	type lateEntry struct {
@@ -281,7 +413,9 @@ func (s *ContactService) performAnalysis() {
 	for i := range contacts {
 		wg.Add(1)
 		go func(idx int) {
-			defer wg.Done(); sem <- struct{}{}; defer func() { <-sem }()
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			c := contacts[idx]
 			tableName := db.GetTableName(c.Username)
 			ext := ContactStatsExtended{ContactStats: model.ContactStats{Contact: c}}
@@ -294,20 +428,34 @@ func (s *ContactService) performAnalysis() {
 
 			for _, mdb := range s.dbMgr.MessageDBs {
 				mRows, err := mdb.Query(fmt.Sprintf("SELECT local_type, create_time, message_content, COALESCE(WCDB_CT_message_content,0) FROM [%s]%s", tableName, timeWhere))
-				if err != nil { continue }
+				if err != nil {
+					continue
+				}
 				for mRows.Next() {
-					var lt int; var ts int64; var rawContent []byte; var ct int64
+					var lt int
+					var ts int64
+					var rawContent []byte
+					var ct int64
 					mRows.Scan(&lt, &ts, &rawContent, &ct)
 					content := decodeGroupContent(rawContent, ct)
 					ext.TotalMessages++
 
-					if ts < globalFirstTs { globalFirstTs = ts }
-					if ts > globalLastTs { globalLastTs = ts }
+					if ts < globalFirstTs {
+						globalFirstTs = ts
+					}
+					if ts > globalLastTs {
+						globalLastTs = ts
+					}
 
 					dt := time.Unix(ts, 0).In(s.tz)
 					h := dt.Hour()
-					if h >= s.cfg.LateNightStartHour && h < s.cfg.LateNightEndHour { lateNightCnt++ }
-					mu.Lock(); globalDaily[dt.Format("2006-01-02")]++; globalHourly[h]++; mu.Unlock()
+					if h >= s.cfg.LateNightStartHour && h < s.cfg.LateNightEndHour {
+						lateNightCnt++
+					}
+					mu.Lock()
+					globalDaily[dt.Format("2006-01-02")]++
+					globalHourly[h]++
+					mu.Unlock()
 
 					typeName := "其他"
 					switch lt {
@@ -317,13 +465,20 @@ func (s *ContactService) performAnalysis() {
 							firstMsgTs = ts
 							ext.FirstMsg = content
 						}
-					case 3: typeName = "图片"
-					case 34: typeName = "语音"
-					case 47: typeName = "表情"; ext.EmojiCnt++
-					case 43: typeName = "视频"
+					case 3:
+						typeName = "图片"
+					case 34:
+						typeName = "语音"
+					case 47:
+						typeName = "表情"
+						ext.EmojiCnt++
+					case 43:
+						typeName = "视频"
 					}
 					typeCounts[typeName]++
-					mu.Lock(); globalTypeMix[typeName]++; mu.Unlock()
+					mu.Lock()
+					globalTypeMix[typeName]++
+					mu.Unlock()
 				}
 				mRows.Close()
 
@@ -340,7 +495,8 @@ func (s *ContactService) performAnalysis() {
 				ext.TheirMessages += theirCnt
 			}
 			if ext.TotalMessages > 0 {
-				ext.FirstMessage = s.formatTime(globalFirstTs); ext.LastMessage = s.formatTime(globalLastTs)
+				ext.FirstMessage = s.formatTime(globalFirstTs)
+				ext.LastMessage = s.formatTime(globalLastTs)
 				ext.MyMessages = ext.TotalMessages - ext.TheirMessages
 				ext.TypePct = make(map[string]float64)
 				ext.TypeCnt = make(map[string]int)
@@ -350,8 +506,12 @@ func (s *ContactService) performAnalysis() {
 				}
 			}
 			name := c.Remark
-			if name == "" { name = c.Nickname }
-			if name == "" { name = c.Username }
+			if name == "" {
+				name = c.Nickname
+			}
+			if name == "" {
+				name = c.Username
+			}
 			lateNightData[idx] = lateEntry{name: name, lateNightCount: lateNightCnt, totalMessages: ext.TotalMessages}
 			result[idx] = ext
 		}(i)
@@ -370,12 +530,16 @@ func (s *ContactService) performAnalysis() {
 	sort.Slice(lateNightData, func(i, j int) bool { return lateNightData[i].lateNightCount > lateNightData[j].lateNightCount })
 	var lateNightRanking []LateNightEntry
 	for _, e := range lateNightData {
-		if e.totalMessages < s.cfg.LateNightMinMessages || e.lateNightCount == 0 { continue }
+		if e.totalMessages < s.cfg.LateNightMinMessages || e.lateNightCount == 0 {
+			continue
+		}
 		ratio := float64(e.lateNightCount) / float64(e.totalMessages) * 100
 		lateNightRanking = append(lateNightRanking, LateNightEntry{
 			Name: e.name, LateNightCount: e.lateNightCount, TotalMessages: e.totalMessages, Ratio: ratio,
 		})
-		if len(lateNightRanking) >= s.cfg.LateNightTopN { break }
+		if len(lateNightRanking) >= s.cfg.LateNightTopN {
+			break
+		}
 	}
 
 	s.cacheMu.Lock()
@@ -388,8 +552,16 @@ func (s *ContactService) performAnalysis() {
 	}
 
 	s.global = GlobalStats{
-		TotalFriends:     len(result),
-		ZeroMsgFriends:   func() int { c := 0; for _, r := range result { if r.TotalMessages == 0 { c++ } }; return c }(),
+		TotalFriends: len(result),
+		ZeroMsgFriends: func() int {
+			c := 0
+			for _, r := range result {
+				if r.TotalMessages == 0 {
+					c++
+				}
+			}
+			return c
+		}(),
 		TotalMessages:    totalMessages,
 		HourlyHeatmap:    globalHourly,
 		TypeMix:          globalTypeMix,
@@ -403,37 +575,42 @@ func (s *ContactService) performAnalysis() {
 			}
 			return m
 		}(),
-		GroupMonthlyTrend:  s.buildGroupMonthlyTrend(),
-		GroupHourlyHeatmap: s.buildGroupHourlyHeatmap(),
 	}
 	maxDayVal := 0
-	for d, c := range globalDaily { if c > maxDayVal { s.global.BusiestDay = d; s.global.BusiestDayCount = c; maxDayVal = c } }
+	for d, c := range globalDaily {
+		if c > maxDayVal {
+			s.global.BusiestDay = d
+			s.global.BusiestDayCount = c
+			maxDayVal = c
+		}
+	}
 	if len(result) > 0 {
 		maxEmoji := -1
-		for _, r := range result { if r.EmojiCnt > maxEmoji { maxEmoji = r.EmojiCnt; name := r.Nickname; if r.Remark != "" { name = r.Remark }; s.global.EmojiKing = name } }
+		for _, r := range result {
+			if r.EmojiCnt > maxEmoji {
+				maxEmoji = r.EmojiCnt
+				name := r.Nickname
+				if r.Remark != "" {
+					name = r.Remark
+				}
+				s.global.EmojiKing = name
+			}
+		}
 	}
 	s.cacheMu.Unlock()
 }
 
 // FilteredStats 时间范围过滤后的统计结果
 type FilteredStats struct {
-	Contacts  []ContactStatsExtended `json:"contacts"`
-	GlobalStats GlobalStats          `json:"global_stats"`
+	Contacts    []ContactStatsExtended `json:"contacts"`
+	GlobalStats GlobalStats            `json:"global_stats"`
 }
 
 // AnalyzeWithFilter 对指定时间范围内的消息做统计（不写入缓存）
 func (s *ContactService) AnalyzeWithFilter(from, to int64) *FilteredStats {
-	rows, err := s.dbMgr.ContactDB.Query("SELECT username, nick_name, remark, alias, flag, COALESCE(big_head_url,''), COALESCE(small_head_url,'') FROM contact WHERE verify_flag=0")
-	if err != nil { return nil }
-	defer rows.Close()
-
-	var contacts []model.Contact
-	for rows.Next() {
-		var c model.Contact
-		rows.Scan(&c.Username, &c.Nickname, &c.Remark, &c.Alias, &c.Flag, &c.BigHeadURL, &c.SmallHeadURL)
-		uname := strings.ToLower(c.Username)
-		if strings.HasSuffix(uname, "@chatroom") || strings.HasPrefix(uname, "gh_") || uname == "" { continue }
-		if (c.Flag&3 != 0) || (strings.TrimSpace(c.Remark) != "") { contacts = append(contacts, c) }
+	contacts := s.loadContactsForAnalysis()
+	if contacts == nil {
+		return nil
 	}
 
 	type lateEntry struct {
@@ -464,7 +641,9 @@ func (s *ContactService) AnalyzeWithFilter(from, to int64) *FilteredStats {
 	for i := range contacts {
 		wg.Add(1)
 		go func(idx int) {
-			defer wg.Done(); sem <- struct{}{}; defer func() { <-sem }()
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			c := contacts[idx]
 			tableName := db.GetTableName(c.Username)
 			ext := ContactStatsExtended{ContactStats: model.ContactStats{Contact: c}}
@@ -478,20 +657,34 @@ func (s *ContactService) AnalyzeWithFilter(from, to int64) *FilteredStats {
 			for _, mdb := range s.dbMgr.MessageDBs {
 				query := fmt.Sprintf("SELECT local_type, create_time, message_content, COALESCE(WCDB_CT_message_content,0) FROM [%s]%s", tableName, timeWhere)
 				mRows, err := mdb.Query(query)
-				if err != nil { continue }
+				if err != nil {
+					continue
+				}
 				for mRows.Next() {
-					var lt int; var ts int64; var rawContent []byte; var ct int64
+					var lt int
+					var ts int64
+					var rawContent []byte
+					var ct int64
 					mRows.Scan(&lt, &ts, &rawContent, &ct)
 					content := decodeGroupContent(rawContent, ct)
 					ext.TotalMessages++
 
-					if ts < globalFirstTs { globalFirstTs = ts }
-					if ts > globalLastTs { globalLastTs = ts }
+					if ts < globalFirstTs {
+						globalFirstTs = ts
+					}
+					if ts > globalLastTs {
+						globalLastTs = ts
+					}
 
 					dt := time.Unix(ts, 0).In(s.tz)
 					h := dt.Hour()
-					if h >= s.cfg.LateNightStartHour && h < s.cfg.LateNightEndHour { lateNightCnt++ }
-					mu.Lock(); globalDaily[dt.Format("2006-01-02")]++; globalHourly[h]++; mu.Unlock()
+					if h >= s.cfg.LateNightStartHour && h < s.cfg.LateNightEndHour {
+						lateNightCnt++
+					}
+					mu.Lock()
+					globalDaily[dt.Format("2006-01-02")]++
+					globalHourly[h]++
+					mu.Unlock()
 
 					typeName := "其他"
 					switch lt {
@@ -501,18 +694,26 @@ func (s *ContactService) AnalyzeWithFilter(from, to int64) *FilteredStats {
 							firstMsgTs = ts
 							ext.FirstMsg = content
 						}
-					case 3: typeName = "图片"
-					case 34: typeName = "语音"
-					case 47: typeName = "表情"; ext.EmojiCnt++
-					case 43: typeName = "视频"
+					case 3:
+						typeName = "图片"
+					case 34:
+						typeName = "语音"
+					case 47:
+						typeName = "表情"
+						ext.EmojiCnt++
+					case 43:
+						typeName = "视频"
 					}
 					typeCounts[typeName]++
-					mu.Lock(); globalTypeMix[typeName]++; mu.Unlock()
+					mu.Lock()
+					globalTypeMix[typeName]++
+					mu.Unlock()
 				}
 				mRows.Close()
 			}
 			if ext.TotalMessages > 0 {
-				ext.FirstMessage = s.formatTime(globalFirstTs); ext.LastMessage = s.formatTime(globalLastTs)
+				ext.FirstMessage = s.formatTime(globalFirstTs)
+				ext.LastMessage = s.formatTime(globalLastTs)
 				ext.TypePct = make(map[string]float64)
 				ext.TypeCnt = make(map[string]int)
 				for k, v := range typeCounts {
@@ -521,8 +722,12 @@ func (s *ContactService) AnalyzeWithFilter(from, to int64) *FilteredStats {
 				}
 			}
 			name := c.Remark
-			if name == "" { name = c.Nickname }
-			if name == "" { name = c.Username }
+			if name == "" {
+				name = c.Nickname
+			}
+			if name == "" {
+				name = c.Username
+			}
 			lateNightData[idx] = lateEntry{name: name, lateNightCount: lateNightCnt, totalMessages: ext.TotalMessages}
 			result[idx] = ext
 		}(i)
@@ -533,20 +738,34 @@ func (s *ContactService) AnalyzeWithFilter(from, to int64) *FilteredStats {
 	sort.Slice(lateNightData, func(i, j int) bool { return lateNightData[i].lateNightCount > lateNightData[j].lateNightCount })
 	var lateNightRanking []LateNightEntry
 	for _, e := range lateNightData {
-		if e.totalMessages < s.cfg.LateNightMinMessages || e.lateNightCount == 0 { continue }
+		if e.totalMessages < s.cfg.LateNightMinMessages || e.lateNightCount == 0 {
+			continue
+		}
 		ratio := float64(e.lateNightCount) / float64(e.totalMessages) * 100
 		lateNightRanking = append(lateNightRanking, LateNightEntry{
 			Name: e.name, LateNightCount: e.lateNightCount, TotalMessages: e.totalMessages, Ratio: ratio,
 		})
-		if len(lateNightRanking) >= s.cfg.LateNightTopN { break }
+		if len(lateNightRanking) >= s.cfg.LateNightTopN {
+			break
+		}
 	}
 
 	var totalMessages int64 = 0
-	for _, r := range result { totalMessages += r.TotalMessages }
+	for _, r := range result {
+		totalMessages += r.TotalMessages
+	}
 
 	gs := GlobalStats{
-		TotalFriends:     len(result),
-		ZeroMsgFriends:   func() int { c := 0; for _, r := range result { if r.TotalMessages == 0 { c++ } }; return c }(),
+		TotalFriends: len(result),
+		ZeroMsgFriends: func() int {
+			c := 0
+			for _, r := range result {
+				if r.TotalMessages == 0 {
+					c++
+				}
+			}
+			return c
+		}(),
 		TotalMessages:    totalMessages,
 		HourlyHeatmap:    globalHourly,
 		TypeMix:          globalTypeMix,
@@ -554,16 +773,27 @@ func (s *ContactService) AnalyzeWithFilter(from, to int64) *FilteredStats {
 		MonthlyTrend: func() map[string]int {
 			m := make(map[string]int)
 			for day, cnt := range globalDaily {
-				if len(day) >= 7 { m[day[:7]] += cnt }
+				if len(day) >= 7 {
+					m[day[:7]] += cnt
+				}
 			}
 			return m
 		}(),
 	}
-	for d, c := range globalDaily { if c > gs.BusiestDayCount { gs.BusiestDay = d; gs.BusiestDayCount = c } }
+	for d, c := range globalDaily {
+		if c > gs.BusiestDayCount {
+			gs.BusiestDay = d
+			gs.BusiestDayCount = c
+		}
+	}
 
 	// filter out zero-message contacts from result
 	var nonEmpty []ContactStatsExtended
-	for _, r := range result { if r.TotalMessages > 0 { nonEmpty = append(nonEmpty, r) } }
+	for _, r := range result {
+		if r.TotalMessages > 0 {
+			nonEmpty = append(nonEmpty, r)
+		}
+	}
 
 	return &FilteredStats{Contacts: nonEmpty, GlobalStats: gs}
 }
@@ -572,9 +802,7 @@ func (s *ContactService) AnalyzeWithFilter(from, to int64) *FilteredStats {
 func (s *ContactService) GetContactDetail(username string) *ContactDetail {
 	tableName := db.GetTableName(username)
 	detail := &ContactDetail{
-		DailyHeatmap:      make(map[string]int),
-		TheirMonthlyTrend: make(map[string]int),
-		MyMonthlyTrend:    make(map[string]int),
+		DailyHeatmap: make(map[string]int),
 	}
 
 	var prevTs int64
@@ -588,27 +816,26 @@ func (s *ContactService) GetContactDetail(username string) *ContactDetail {
 
 		rows, err := mdb.Query(fmt.Sprintf(
 			"SELECT create_time, local_type, message_content, COALESCE(real_sender_id,0) FROM [%s]%s%s", tableName, timeWhere, orderBy))
-		if err != nil { continue }
+		if err != nil {
+			continue
+		}
 		for rows.Next() {
-			var ts int64; var lt int; var content string; var senderID int64
+			var ts int64
+			var lt int
+			var content string
+			var senderID int64
 			rows.Scan(&ts, &lt, &content, &senderID)
 			dt := time.Unix(ts, 0).In(s.tz)
 			h := dt.Hour()
 			w := int(dt.Weekday()) // 0=Sunday
 
-			isMineMsg := contactRowID < 0 || senderID != contactRowID
-			month := dt.Format("2006-01")
-
 			detail.HourlyDist[h]++
 			detail.WeeklyDist[w]++
 			detail.DailyHeatmap[dt.Format("2006-01-02")]++
-			if isMineMsg {
-				detail.MyMonthlyTrend[month]++
-			} else {
-				detail.TheirMonthlyTrend[month]++
-			}
 
-			if h >= s.cfg.LateNightStartHour && h < s.cfg.LateNightEndHour { detail.LateNightCount++ }
+			if h >= s.cfg.LateNightStartHour && h < s.cfg.LateNightEndHour {
+				detail.LateNightCount++
+			}
 
 			// 红包 / 转账检测 (type 49，含 wcpay 或 redenvelope)
 			if lt == 49 && (strings.Contains(content, "wcpay") || strings.Contains(content, "redenvelope")) {
@@ -618,7 +845,9 @@ func (s *ContactService) GetContactDetail(username string) *ContactDetail {
 			// 新对话段：与上条消息间隔 > session_gap_seconds
 			if prevTs == 0 || ts-prevTs > s.cfg.SessionGapSeconds {
 				detail.TotalSessions++
-				if isMineMsg {
+				// 主动发起：该段第一条消息是我发的（senderID != 对方 rowid）
+				isMine := contactRowID < 0 || senderID != contactRowID
+				if isMine {
 					detail.InitiationCnt++
 				}
 			}
@@ -631,11 +860,23 @@ func (s *ContactService) GetContactDetail(username string) *ContactDetail {
 
 // ChatMessage 单条聊天消息（用于日历点击查看当天记录）
 type ChatMessage struct {
-	Time    string `json:"time"`              // "14:23"
-	Content string `json:"content"`           // 消息内容或类型描述
-	IsMine  bool   `json:"is_mine"`           // true=我发的
-	Type    int    `json:"type"`              // local_type
-	Date    string `json:"date,omitempty"`    // "2024-03-15"，搜索结果中使用
+	Time    string `json:"time"`           // "14:23"
+	Content string `json:"content"`        // 消息内容或类型描述
+	IsMine  bool   `json:"is_mine"`        // true=我发的
+	Type    int    `json:"type"`           // local_type
+	Date    string `json:"date,omitempty"` // "2024-03-15"，搜索结果中使用
+}
+
+type GlobalSearchHit struct {
+	Username string `json:"username"`
+	Name     string `json:"name"`
+	IsGroup  bool   `json:"is_group"`
+	Time     string `json:"time"`
+	Date     string `json:"date"`
+	Content  string `json:"content"`
+	IsMine   bool   `json:"is_mine"`
+	Type     int    `json:"type"`
+	Ts       int64  `json:"-"`
 }
 
 // GetDayMessages 返回指定联系人某一天的聊天记录（按时间排序）
@@ -858,6 +1099,95 @@ func (s *ContactService) SearchMessages(username, query string, includeMine bool
 	return msgs
 }
 
+func (s *ContactService) SearchAllMessages(query string, includeMine bool, limit int) []GlobalSearchHit {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return []GlobalSearchHit{}
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+
+	lowerQuery := strings.ToLower(query)
+	tw := s.timeWhere()
+	targets := s.loadConversationTargets(true)
+	if len(targets) == 0 {
+		return []GlobalSearchHit{}
+	}
+
+	results := make([]GlobalSearchHit, 0, limit)
+	for _, target := range targets {
+		tableName := db.GetTableName(target.Username)
+		for _, mdb := range s.dbMgr.MessageDBs {
+			var contactRowID int64 = -1
+			if !target.IsGroup {
+				_ = mdb.QueryRow("SELECT rowid FROM Name2Id WHERE user_name = ?", target.Username).Scan(&contactRowID)
+			}
+
+			senderFilter := ""
+			if !target.IsGroup && !includeMine && contactRowID >= 0 {
+				senderFilter = fmt.Sprintf(" AND real_sender_id = %d", contactRowID)
+			}
+
+			whereClause := tw
+			if whereClause == "" {
+				whereClause = " WHERE local_type=1"
+			} else {
+				whereClause += " AND local_type=1"
+			}
+			whereClause += senderFilter
+
+			sqlStr := fmt.Sprintf(
+				"SELECT create_time, message_content, COALESCE(WCDB_CT_message_content,0), COALESCE(real_sender_id,0) FROM [%s]%s ORDER BY create_time DESC",
+				tableName, whereClause,
+			)
+			rows, err := mdb.Query(sqlStr)
+			if err != nil {
+				continue
+			}
+			for rows.Next() {
+				var ts int64
+				var rawContent []byte
+				var ct, senderID int64
+				rows.Scan(&ts, &rawContent, &ct, &senderID)
+
+				content := strings.TrimSpace(decodeGroupContent(rawContent, ct))
+				if content == "" {
+					continue
+				}
+				if !strings.Contains(strings.ToLower(content), lowerQuery) {
+					continue
+				}
+
+				isMine := false
+				if !target.IsGroup {
+					isMine = contactRowID < 0 || senderID != contactRowID
+				}
+
+				t := time.Unix(ts, 0).In(s.tz)
+				results = append(results, GlobalSearchHit{
+					Username: target.Username,
+					Name:     target.Name,
+					IsGroup:  target.IsGroup,
+					Time:     t.Format("15:04"),
+					Date:     t.Format("2006-01-02"),
+					Content:  content,
+					IsMine:   isMine,
+					Type:     1,
+					Ts:       ts,
+				})
+			}
+			rows.Close()
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool { return results[i].Ts > results[j].Ts })
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results
+}
+
 func (s *ContactService) GetWordCloud(username string, includeMine bool) []WordCount {
 	tableName := db.GetTableName(username)
 	// 先收集文本，关闭 DB 连接后再分词
@@ -873,13 +1203,17 @@ func (s *ContactService) GetWordCloud(username string, includeMine bool) []WordC
 	var texts []string
 	for _, mdb := range s.dbMgr.MessageDBs {
 		rows, err := mdb.Query(fmt.Sprintf("SELECT message_content, COALESCE(WCDB_CT_message_content,0) FROM [%s]%s", tableName, twCloud))
-		if err != nil { continue }
+		if err != nil {
+			continue
+		}
 		for rows.Next() {
 			var rawContent []byte
 			var ct int64
 			rows.Scan(&rawContent, &ct)
 			content := decodeGroupContent(rawContent, ct)
-			if content == "" || s.isSys(content) { continue }
+			if content == "" || s.isSys(content) {
+				continue
+			}
 			content = wechatEmojiRe.ReplaceAllString(content, "")
 			texts = append(texts, content)
 		}
@@ -890,11 +1224,17 @@ func (s *ContactService) GetWordCloud(username string, includeMine bool) []WordC
 	for _, content := range texts {
 		for _, seg := range s.segmenter.Cut(content, true) {
 			seg = strings.TrimSpace(seg)
-			if !utf8.ValidString(seg) { continue }
+			if !utf8.ValidString(seg) {
+				continue
+			}
 			runes := []rune(seg)
 			// 长度：至少 2 个字符，不超过 8 个（过滤长句残片）
-			if len(runes) < 2 || len(runes) > 8 { continue }
-			if isNumeric(seg) || STOP_WORDS[seg] || containsEmoji(seg) || !hasWordChar(seg) { continue }
+			if len(runes) < 2 || len(runes) > 8 {
+				continue
+			}
+			if isNumeric(seg) || STOP_WORDS[seg] || containsEmoji(seg) || !hasWordChar(seg) {
+				continue
+			}
 			wordCounts[seg]++
 		}
 	}
@@ -913,23 +1253,34 @@ func (s *ContactService) GetWordCloud(username string, includeMine bool) []WordC
 		}
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Count > list[j].Count })
-	if len(list) > 120 { list = list[:120] }
+	if len(list) > 120 {
+		list = list[:120]
+	}
 	return list
 }
 
 func (s *ContactService) isSys(c string) bool {
-	for _, k := range SYSTEM_KEYS { if strings.Contains(c, k) { return true } }
+	for _, k := range SYSTEM_KEYS {
+		if strings.Contains(c, k) {
+			return true
+		}
+	}
 	return false
 }
 
 func (s *ContactService) GetCachedStats() []ContactStatsExtended {
-	s.cacheMu.RLock(); defer s.cacheMu.RUnlock()
-	if s.cache == nil { return []ContactStatsExtended{} }
+	s.cacheMu.RLock()
+	defer s.cacheMu.RUnlock()
+	if s.cache == nil {
+		return []ContactStatsExtended{}
+	}
 	return s.cache
 }
 
 func (s *ContactService) GetGlobal() GlobalStats {
-	s.cacheMu.RLock(); defer s.cacheMu.RUnlock(); return s.global
+	s.cacheMu.RLock()
+	defer s.cacheMu.RUnlock()
+	return s.global
 }
 
 func (s *ContactService) GetStatus() map[string]interface{} {
@@ -943,19 +1294,27 @@ func (s *ContactService) GetStatus() map[string]interface{} {
 }
 
 func (s *ContactService) formatTime(ts int64) string {
-	if ts <= 0 || ts > 2000000000 { return "-" }
+	if ts <= 0 || ts > 2000000000 {
+		return "-"
+	}
 	return time.Unix(ts, 0).In(s.tz).Format("2006-01-02")
 }
 
 func isNumeric(s string) bool {
-	for _, r := range s { if (r < '0' || r > '9') && r != '.' { return false } }
+	for _, r := range s {
+		if (r < '0' || r > '9') && r != '.' {
+			return false
+		}
+	}
 	return true
 }
 
 // hasWordChar 判断是否包含至少一个汉字或英文字母，过滤纯标点/符号词
 func hasWordChar(s string) bool {
 	for _, r := range s {
-		if unicode.IsLetter(r) { return true }
+		if unicode.IsLetter(r) {
+			return true
+		}
 	}
 	return false
 }
@@ -965,7 +1324,7 @@ func hasWordChar(s string) bool {
 
 type GroupInfo struct {
 	Username      string `json:"username"`
-	Name          string `json:"name"`       // 群名（remark 或 nickname）
+	Name          string `json:"name"` // 群名（remark 或 nickname）
 	SmallHeadURL  string `json:"small_head_url"`
 	TotalMessages int64  `json:"total_messages"`
 	FirstMessage  string `json:"first_message_time"`
@@ -981,15 +1340,17 @@ type GroupDetail struct {
 	HourlyDist   [24]int        `json:"hourly_dist"`
 	WeeklyDist   [7]int         `json:"weekly_dist"`
 	DailyHeatmap map[string]int `json:"daily_heatmap"`
-	MemberRank   []MemberStat   `json:"member_rank"`  // top 20 发言者
-	TopWords     []WordCount    `json:"top_words"`    // top 30 高频词
+	MemberRank   []MemberStat   `json:"member_rank"` // top 20 发言者
+	TopWords     []WordCount    `json:"top_words"`   // top 30 高频词
 }
 
 // GetGroups 返回所有群聊列表（含消息量），只返回有消息的群
 func (s *ContactService) GetGroups() []GroupInfo {
 	rows, err := s.dbMgr.ContactDB.Query(
 		`SELECT username, nick_name, remark, COALESCE(small_head_url,'') FROM contact WHERE username LIKE '%@chatroom'`)
-	if err != nil { return nil }
+	if err != nil {
+		return nil
+	}
 	defer rows.Close()
 
 	type raw struct{ uname, nick, remark, avatar string }
@@ -1008,7 +1369,9 @@ func (s *ContactService) GetGroups() []GroupInfo {
 	for _, g := range groups {
 		wg.Add(1)
 		go func(g raw) {
-			defer wg.Done(); sem <- struct{}{}; defer func() { <-sem }()
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			tableName := db.GetTableName(g.uname)
 			var total int64
 			var firstTs int64 = 9999999999
@@ -1023,13 +1386,27 @@ func (s *ContactService) GetGroups() []GroupInfo {
 				err := mdb.QueryRow(fmt.Sprintf(twGroupsCount, tableName)).Scan(&cnt, &minTs, &maxTs)
 				if err == nil {
 					total += cnt
-					if minTs > 0 && minTs < firstTs { firstTs = minTs }
-					if maxTs > lastTs { lastTs = maxTs }
+					if minTs > 0 && minTs < firstTs {
+						firstTs = minTs
+					}
+					if maxTs > lastTs {
+						lastTs = maxTs
+					}
 				}
 			}
-			if total == 0 { return }
-			if firstTs == 9999999999 { firstTs = 0 }
-			name := g.remark; if name == "" { name = g.nick }; if name == "" { name = g.uname }
+			if total == 0 {
+				return
+			}
+			if firstTs == 9999999999 {
+				firstTs = 0
+			}
+			name := g.remark
+			if name == "" {
+				name = g.nick
+			}
+			if name == "" {
+				name = g.uname
+			}
 			mu.Lock()
 			result = append(result, GroupInfo{
 				Username: g.uname, Name: name, SmallHeadURL: g.avatar,
@@ -1047,17 +1424,84 @@ func (s *ContactService) GetGroups() []GroupInfo {
 func (s *ContactService) loadContactNameMap() map[string]string {
 	nameMap := make(map[string]string)
 	rows, err := s.dbMgr.ContactDB.Query("SELECT username, COALESCE(remark,''), COALESCE(nick_name,'') FROM contact")
-	if err != nil { return nameMap }
+	if err != nil {
+		return nameMap
+	}
 	defer rows.Close()
 	for rows.Next() {
 		var uname, remark, nick string
 		rows.Scan(&uname, &remark, &nick)
 		name := remark
-		if name == "" { name = nick }
-		if name == "" { name = uname }
+		if name == "" {
+			name = nick
+		}
+		if name == "" {
+			name = uname
+		}
 		nameMap[uname] = name
 	}
 	return nameMap
+}
+
+type conversationTarget struct {
+	Username string
+	Name     string
+	IsGroup  bool
+}
+
+func (s *ContactService) loadConversationTargets(includeGroups bool) []conversationTarget {
+	rows, err := s.dbMgr.ContactDB.Query("SELECT username, COALESCE(remark,''), COALESCE(nick_name,'') FROM contact")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	targets := make([]conversationTarget, 0, 256)
+	seen := make(map[string]struct{})
+	for rows.Next() {
+		var username, remark, nick string
+		if err := rows.Scan(&username, &remark, &nick); err != nil {
+			continue
+		}
+		username = strings.TrimSpace(username)
+		if username == "" {
+			continue
+		}
+		if !s.msgRepo.HasIndexedTable(username) {
+			continue
+		}
+		if _, ok := seen[username]; ok {
+			continue
+		}
+
+		isGroup := strings.HasSuffix(strings.ToLower(username), "@chatroom")
+		if !includeGroups && isGroup {
+			continue
+		}
+
+		name := strings.TrimSpace(remark)
+		if name == "" {
+			name = strings.TrimSpace(nick)
+		}
+		if name == "" {
+			name = username
+		}
+
+		seen[username] = struct{}{}
+		targets = append(targets, conversationTarget{
+			Username: username,
+			Name:     name,
+			IsGroup:  isGroup,
+		})
+	}
+
+	sort.Slice(targets, func(i, j int) bool {
+		if targets[i].IsGroup != targets[j].IsGroup {
+			return !targets[i].IsGroup
+		}
+		return targets[i].Name < targets[j].Name
+	})
+	return targets
 }
 
 // decodeGroupContent 解码群消息内容（支持 zstd 压缩，goroutine-safe）
@@ -1066,42 +1510,24 @@ func decodeGroupContent(raw []byte, ct int64) string {
 		dec := zstdDecoderPool.Get().(*zstd.Decoder)
 		result, err := dec.DecodeAll(raw, nil)
 		zstdDecoderPool.Put(dec)
-		if err != nil { return "" }
+		if err != nil {
+			return ""
+		}
 		return string(result)
 	}
 	return string(raw)
 }
 
-// GetGroupDetail 群聊深度画像（lazy load + 内存缓存，异步计算）
-// 首次调用立即返回 nil 并在后台开始计算，前端应轮询直到返回非 nil
+// GetGroupDetail 群聊深度画像（lazy load + 内存缓存）
 func (s *ContactService) GetGroupDetail(username string) *GroupDetail {
 	// 先查缓存
 	s.groupDetailMu.RLock()
-	cached, inCache := s.groupDetailCache[username]
-	computing := s.groupDetailComputing[username]
-	s.groupDetailMu.RUnlock()
-
-	if inCache {
+	if cached, ok := s.groupDetailCache[username]; ok {
+		s.groupDetailMu.RUnlock()
 		return cached
 	}
-	if computing {
-		return nil // 正在计算中，让前端继续轮询
-	}
+	s.groupDetailMu.RUnlock()
 
-	// 标记为计算中，启动后台 goroutine
-	s.groupDetailMu.Lock()
-	if s.groupDetailComputing[username] || s.groupDetailCache[username] != nil {
-		s.groupDetailMu.Unlock()
-		return nil
-	}
-	s.groupDetailComputing[username] = true
-	s.groupDetailMu.Unlock()
-
-	go s.computeGroupDetail(username)
-	return nil
-}
-
-func (s *ContactService) computeGroupDetail(username string) {
 	tableName := db.GetTableName(username)
 	detail := &GroupDetail{DailyHeatmap: make(map[string]int)}
 	memberMap := make(map[string]int64)
@@ -1117,7 +1543,8 @@ func (s *ContactService) computeGroupDetail(username string) {
 		idToWxid := make(map[int64]string)
 		if nrows, nerr := mdb.Query("SELECT rowid, user_name FROM Name2Id"); nerr == nil {
 			for nrows.Next() {
-				var rid int64; var uname string
+				var rid int64
+				var uname string
 				nrows.Scan(&rid, &uname)
 				idToWxid[rid] = uname
 			}
@@ -1126,7 +1553,9 @@ func (s *ContactService) computeGroupDetail(username string) {
 
 		rows, err := mdb.Query(fmt.Sprintf(
 			"SELECT create_time, real_sender_id FROM [%s]%s", tableName, twDetail))
-		if err != nil { continue }
+		if err != nil {
+			continue
+		}
 		for rows.Next() {
 			var ts, senderID int64
 			rows.Scan(&ts, &senderID)
@@ -1136,7 +1565,9 @@ func (s *ContactService) computeGroupDetail(username string) {
 			detail.DailyHeatmap[dt.Format("2006-01-02")]++
 			if wxid, ok := idToWxid[senderID]; ok && wxid != "" {
 				speaker := wxid
-				if name, ok2 := nameMap[wxid]; ok2 { speaker = name }
+				if name, ok2 := nameMap[wxid]; ok2 {
+					speaker = name
+				}
 				memberMap[speaker]++
 			}
 		}
@@ -1156,17 +1587,23 @@ func (s *ContactService) computeGroupDetail(username string) {
 		rows, err := mdb.Query(fmt.Sprintf(
 			"SELECT message_content, COALESCE(WCDB_CT_message_content,0) FROM [%s]%s",
 			tableName, twText))
-		if err != nil { continue }
+		if err != nil {
+			continue
+		}
 		for rows.Next() {
 			var rawContent []byte
 			var ct int64
 			rows.Scan(&rawContent, &ct)
 			content := decodeGroupContent(rawContent, ct)
-			if content == "" { continue }
+			if content == "" {
+				continue
+			}
 			if idx := strings.Index(content, ":\n"); idx > 0 && idx < 80 {
 				content = content[idx+2:]
 			}
-			if content == "" || s.isSys(content) { continue }
+			if content == "" || s.isSys(content) {
+				continue
+			}
 			content = wechatEmojiRe.ReplaceAllString(content, "")
 			textSamples = append(textSamples, content)
 		}
@@ -1177,10 +1614,16 @@ func (s *ContactService) computeGroupDetail(username string) {
 	for _, text := range textSamples {
 		for _, seg := range s.segmenter.Cut(text, true) {
 			seg = strings.TrimSpace(seg)
-			if !utf8.ValidString(seg) { continue }
+			if !utf8.ValidString(seg) {
+				continue
+			}
 			runes := []rune(seg)
-			if len(runes) < 2 || len(runes) > 8 { continue }
-			if isNumeric(seg) || STOP_WORDS[seg] || containsEmoji(seg) || !hasWordChar(seg) { continue }
+			if len(runes) < 2 || len(runes) > 8 {
+				continue
+			}
+			if isNumeric(seg) || STOP_WORDS[seg] || containsEmoji(seg) || !hasWordChar(seg) {
+				continue
+			}
 			wordCounts[seg]++
 		}
 	}
@@ -1191,30 +1634,36 @@ func (s *ContactService) computeGroupDetail(username string) {
 		detail.MemberRank = append(detail.MemberRank, MemberStat{Speaker: speaker, Count: cnt})
 	}
 	sort.Slice(detail.MemberRank, func(i, j int) bool { return detail.MemberRank[i].Count > detail.MemberRank[j].Count })
-	if len(detail.MemberRank) > 20 { detail.MemberRank = detail.MemberRank[:20] }
+	if len(detail.MemberRank) > 20 {
+		detail.MemberRank = detail.MemberRank[:20]
+	}
 
 	// 高频词 top 30
 	for w, c := range wordCounts {
-		if utf8.ValidString(w) { detail.TopWords = append(detail.TopWords, WordCount{w, c}) }
+		if utf8.ValidString(w) {
+			detail.TopWords = append(detail.TopWords, WordCount{w, c})
+		}
 	}
 	sort.Slice(detail.TopWords, func(i, j int) bool { return detail.TopWords[i].Count > detail.TopWords[j].Count })
-	if len(detail.TopWords) > 30 { detail.TopWords = detail.TopWords[:30] }
+	if len(detail.TopWords) > 30 {
+		detail.TopWords = detail.TopWords[:30]
+	}
 
-	// 写入缓存，清除 computing 标记
+	// 写入缓存
 	s.groupDetailMu.Lock()
 	s.groupDetailCache[username] = detail
-	delete(s.groupDetailComputing, username)
 	s.groupDetailMu.Unlock()
+
+	return detail
 }
 
 // GroupChatMessage 群聊单条消息（含发言者显示名）
 type GroupChatMessage struct {
-	Time    string `json:"time"`           // "HH:MM"
-	Speaker string `json:"speaker"`        // 发言者显示名
-	Content string `json:"content"`        // 消息内容
-	IsMine  bool   `json:"is_mine"`        // 是否是我发的
-	Type    int    `json:"type"`           // local_type
-	Date    string `json:"date,omitempty"` // "2024-03-15"，搜索结果中使用
+	Time    string `json:"time"`    // "HH:MM"
+	Speaker string `json:"speaker"` // 发言者显示名
+	Content string `json:"content"` // 消息内容
+	IsMine  bool   `json:"is_mine"` // 是否是我发的
+	Type    int    `json:"type"`    // local_type
 }
 
 // GetGroupDayMessages 返回群聊某一天的聊天记录
@@ -1341,189 +1790,6 @@ func (s *ContactService) GetGroupDayMessages(username, date string) []GroupChatM
 		return []GroupChatMessage{}
 	}
 	return msgs
-}
-
-// SearchGroupMessages 在群聊消息中搜索关键词，只匹配文本消息，返回最多 200 条（按时间倒序）
-func (s *ContactService) SearchGroupMessages(username, query string) []GroupChatMessage {
-	if query == "" {
-		return []GroupChatMessage{}
-	}
-	tableName := db.GetTableName(username)
-	tw := s.timeWhere()
-
-	whereClause := tw
-	if whereClause == "" {
-		whereClause = " WHERE local_type=1"
-	} else {
-		whereClause += " AND local_type=1"
-	}
-
-	nameMap := s.loadContactNameMap()
-	lowerQuery := strings.ToLower(query)
-	var msgs []GroupChatMessage
-
-	for _, mdb := range s.dbMgr.MessageDBs {
-		id2name := make(map[int64]string)
-		n2iRows, err2 := mdb.Query("SELECT rowid, user_name FROM Name2Id")
-		if err2 == nil {
-			for n2iRows.Next() {
-				var rid int64
-				var uname string
-				n2iRows.Scan(&rid, &uname)
-				id2name[rid] = uname
-			}
-			n2iRows.Close()
-		}
-
-		rows, err := mdb.Query(fmt.Sprintf(
-			"SELECT create_time, message_content, COALESCE(WCDB_CT_message_content,0), COALESCE(real_sender_id,0) FROM [%s]%s ORDER BY create_time DESC",
-			tableName, whereClause,
-		))
-		if err != nil {
-			continue
-		}
-		for rows.Next() {
-			var ts int64
-			var rawContent []byte
-			var ct, senderID int64
-			rows.Scan(&ts, &rawContent, &ct, &senderID)
-
-			rawText := decodeGroupContent(rawContent, ct)
-			rawText = strings.TrimSpace(rawText)
-
-			speakerWxid := ""
-			content := rawText
-			if idx := strings.Index(rawText, ":\n"); idx > 0 && idx < 80 {
-				speakerWxid = rawText[:idx]
-				content = rawText[idx+2:]
-			}
-			if speakerWxid == "" {
-				if wxid, ok := id2name[senderID]; ok {
-					speakerWxid = wxid
-				}
-			}
-
-			content = strings.TrimSpace(content)
-			if content == "" {
-				continue
-			}
-			if !strings.Contains(strings.ToLower(content), lowerQuery) {
-				continue
-			}
-
-			speaker := speakerWxid
-			if n, ok := nameMap[speakerWxid]; ok && n != "" {
-				speaker = n
-			}
-			if speaker == "" {
-				speaker = "未知"
-			}
-
-			t := time.Unix(ts, 0).In(s.tz)
-			msgs = append(msgs, GroupChatMessage{
-				Time:    t.Format("15:04"),
-				Date:    t.Format("2006-01-02"),
-				Speaker: speaker,
-				Content: content,
-				IsMine:  false,
-				Type:    1,
-			})
-		}
-		rows.Close()
-	}
-
-	if msgs == nil {
-		return []GroupChatMessage{}
-	}
-	sort.Slice(msgs, func(i, j int) bool { return msgs[i].Date+msgs[i].Time > msgs[j].Date+msgs[j].Time })
-	if len(msgs) > 200 {
-		msgs = msgs[:200]
-	}
-	return msgs
-}
-
-// buildGroupHourlyHeatmap 统计所有群聊的 24 小时消息分布
-func (s *ContactService) buildGroupHourlyHeatmap() [24]int {
-	var result [24]int
-
-	rows, err := s.dbMgr.ContactDB.Query(`SELECT username FROM contact WHERE username LIKE '%@chatroom'`)
-	if err != nil {
-		return result
-	}
-	var groupUsernames []string
-	for rows.Next() {
-		var uname string
-		rows.Scan(&uname)
-		groupUsernames = append(groupUsernames, uname)
-	}
-	rows.Close()
-
-	twFilter := s.timeWhere()
-	for _, groupUname := range groupUsernames {
-		tableName := db.GetTableName(groupUname)
-		for _, mdb := range s.dbMgr.MessageDBs {
-			var query string
-			if twFilter == "" {
-				query = fmt.Sprintf("SELECT create_time FROM [%s]", tableName)
-			} else {
-				query = fmt.Sprintf("SELECT create_time FROM [%s]%s", tableName, twFilter)
-			}
-			mRows, err := mdb.Query(query)
-			if err != nil {
-				continue
-			}
-			for mRows.Next() {
-				var ts int64
-				mRows.Scan(&ts)
-				h := time.Unix(ts, 0).In(s.tz).Hour()
-				result[h]++
-			}
-			mRows.Close()
-		}
-	}
-	return result
-}
-
-// buildGroupMonthlyTrend 统计所有群聊的月度消息量（month → count）
-func (s *ContactService) buildGroupMonthlyTrend() map[string]int {
-	result := make(map[string]int)
-
-	rows, err := s.dbMgr.ContactDB.Query(`SELECT username FROM contact WHERE username LIKE '%@chatroom'`)
-	if err != nil {
-		return result
-	}
-	var groupUsernames []string
-	for rows.Next() {
-		var uname string
-		rows.Scan(&uname)
-		groupUsernames = append(groupUsernames, uname)
-	}
-	rows.Close()
-
-	twFilter := s.timeWhere()
-	for _, groupUname := range groupUsernames {
-		tableName := db.GetTableName(groupUname)
-		for _, mdb := range s.dbMgr.MessageDBs {
-			var query string
-			if twFilter == "" {
-				query = fmt.Sprintf("SELECT create_time FROM [%s]", tableName)
-			} else {
-				query = fmt.Sprintf("SELECT create_time FROM [%s]%s", tableName, twFilter)
-			}
-			mRows, err := mdb.Query(query)
-			if err != nil {
-				continue
-			}
-			for mRows.Next() {
-				var ts int64
-				mRows.Scan(&ts)
-				month := time.Unix(ts, 0).In(s.tz).Format("2006-01")
-				result[month]++
-			}
-			mRows.Close()
-		}
-	}
-	return result
 }
 
 // buildSharedGroupCounts 构建所有联系人的共同群聊数量映射（username → 共同群聊数）
@@ -1666,7 +1932,7 @@ func containsEmoji(s string) bool {
 			r >= 0xFE00 && r <= 0xFE0F ||
 			r >= 0x1F000 && r <= 0x1F02F ||
 			unicode.Is(unicode.So, r) || // Symbols, Other
-			unicode.Is(unicode.Sk, r) {  // Symbols, Modifier
+			unicode.Is(unicode.Sk, r) { // Symbols, Modifier
 			return true
 		}
 	}

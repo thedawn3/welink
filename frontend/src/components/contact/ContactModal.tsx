@@ -4,30 +4,128 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { X, Users, EyeOff, Search, Loader2 } from 'lucide-react';
-import type { ContactStats, ContactDetail, SentimentResult, GroupInfo, ChatMessage } from '../../types';
+import type {
+  ContactStats,
+  ContactDetail,
+  SentimentResult,
+  GroupInfo,
+  ChatMessage,
+  RelationProfileDetail,
+  ControversyDetail,
+} from '../../types';
 import { WordCloudCanvas } from './WordCloudCanvas';
 import { ContactDetailCharts } from './ContactDetailCharts';
 import { SentimentChart } from './SentimentChart';
+import { DayChatPanel } from './DayChatPanel';
+import { RelationInsightPanel } from './RelationInsightPanel';
+import { ControversyPanel } from './ControversyPanel';
 import { useWordCloud } from '../../hooks/useContacts';
-import { contactsApi } from '../../services/api';
+import { contactsApi, relationsApi } from '../../services/api';
 
 interface ContactModalProps {
   contact: ContactStats | null;
   onClose: () => void;
+  initialTab?: ModalTab;
+  initialControversyLabel?: string;
   onGroupClick?: (group: GroupInfo) => void;
   onBlock?: (username: string) => void;
 }
 
-type ModalTab = 'wordcloud' | 'detail' | 'sentiment' | 'search';
+type ModalTab = 'wordcloud' | 'detail' | 'sentiment' | 'search' | 'analysis';
+type AnalysisMode = 'objective' | 'controversy';
 
-export const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose, onGroupClick, onBlock }) => {
+type Dict = Record<string, unknown>;
+
+function clampConfidenceValue(value: unknown): number | undefined {
+  const numeric = typeof value === 'number' ? value : (typeof value === 'string' ? Number(value) : NaN);
+  if (!Number.isFinite(numeric)) return undefined;
+  return Math.max(0, Math.min(100, numeric));
+}
+
+function firstNonEmptyText(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) return numeric;
+    }
+  }
+  return undefined;
+}
+
+function extractDaysFromText(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  const match = value.match(/(\d{1,4})\s*天/);
+  if (!match) return undefined;
+  const days = Number(match[1]);
+  return Number.isFinite(days) ? days : undefined;
+}
+
+function buildStaleHint(daysSinceLastContact?: number): string | undefined {
+  if (typeof daysSinceLastContact !== 'number' || !Number.isFinite(daysSinceLastContact)) return undefined;
+  if (daysSinceLastContact <= 30) return undefined;
+  if (daysSinceLastContact <= 90) {
+    return `最近 ${Math.round(daysSinceLastContact)} 天联系减少，当前判断置信度已下调`;
+  }
+  if (daysSinceLastContact <= 180) {
+    return `近 90 天联系较少（最近 ${Math.round(daysSinceLastContact)} 天），当前判断更偏历史回看`;
+  }
+  return `已连续 ${Math.round(daysSinceLastContact)} 天未联系，当前结论以历史数据为主且置信度显著下调`;
+}
+
+function averageLabelConfidence(labels: Array<{ confidence?: number }> | undefined): number | undefined {
+  if (!labels?.length) return undefined;
+  const top = labels.slice(0, 3).map((item) => clampConfidenceValue(item.confidence)).filter((value): value is number => typeof value === 'number');
+  if (!top.length) return undefined;
+  return top.reduce((sum, value) => sum + value, 0) / top.length;
+}
+
+function extractLastGapDaysFromLabels(labels: Array<{ metrics?: Array<{ key?: string; value?: number | string; display_value?: string; displayValue?: string }> }> | undefined): number | undefined {
+  if (!labels?.length) return undefined;
+  for (const label of labels) {
+    const metrics = label.metrics ?? [];
+    for (const metric of metrics) {
+      if (metric.key !== 'last_gap' && metric.key !== 'days_since_last_contact') continue;
+      const fromValue = firstNumber(metric.value);
+      if (typeof fromValue === 'number') return fromValue;
+      const fromDisplay = firstNumber(metric.display_value, metric.displayValue, extractDaysFromText(metric.display_value), extractDaysFromText(metric.displayValue));
+      if (typeof fromDisplay === 'number') return fromDisplay;
+    }
+  }
+  return undefined;
+}
+
+export const ContactModal: React.FC<ContactModalProps> = ({
+  contact,
+  onClose,
+  initialTab = 'wordcloud',
+  initialControversyLabel,
+  onGroupClick,
+  onBlock,
+}) => {
   const { data: wordData, loading: isAnalysing, fetch: fetchWordCloud } = useWordCloud();
-  const [tab, setTab] = useState<ModalTab>('wordcloud');
+  const [tab, setTab] = useState<ModalTab>(initialTab);
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [sentiment, setSentiment] = useState<SentimentResult | null>(null);
   const [sentimentLoading, setSentimentLoading] = useState(false);
-  const [includeMine, setIncludeMine] = useState(false);
+  const [relationDetail, setRelationDetail] = useState<RelationProfileDetail | null>(null);
+  const [relationLoading, setRelationLoading] = useState(false);
+  const [controversyDetail, setControversyDetail] = useState<ControversyDetail | null>(null);
+  const [controversyLoading, setControversyLoading] = useState(false);
+  const [selectedLabel, setSelectedLabel] = useState<string | undefined>(initialControversyLabel);
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>(initialControversyLabel ? 'controversy' : 'objective');
+  const [dayPanel, setDayPanel] = useState<{ date: string; count: number } | null>(null);
+  const [includeMine, setIncludeMine] = useState(true);
   const [commonGroups, setCommonGroups] = useState<GroupInfo[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
@@ -59,22 +157,56 @@ export const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose, on
     }
   }, []);
 
+  const fetchRelationDetail = useCallback(async (username: string) => {
+    setRelationLoading(true);
+    try {
+      const data = await relationsApi.getDetail(username);
+      setRelationDetail(data);
+    } catch (e) {
+      console.error('Failed to fetch relation detail', e);
+      setRelationDetail(null);
+    } finally {
+      setRelationLoading(false);
+    }
+  }, []);
+
+  const fetchControversyDetail = useCallback(async (username: string) => {
+    setControversyLoading(true);
+    try {
+      const data = await relationsApi.getControversyDetail(username);
+      setControversyDetail(data);
+      setSelectedLabel((current) => current ?? data.controversial_labels?.[0]?.label);
+    } catch (e) {
+      console.error('Failed to fetch controversy detail', e);
+      setControversyDetail(null);
+    } finally {
+      setControversyLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (contact) {
-      setTab('wordcloud');
+      setTab(initialTab);
       setDetail(null);
       setSentiment(null);
-      setIncludeMine(false);
+      setRelationDetail(null);
+      setControversyDetail(null);
+      setSelectedLabel(initialControversyLabel);
+      setAnalysisMode(initialControversyLabel ? 'controversy' : 'objective');
+      setDayPanel(null);
+      setIncludeMine(true);
       setCommonGroups([]);
       setSearchQuery('');
       setSearchResults([]);
       setSearchDone(false);
-      fetchWordCloud(contact.username, false);
+      fetchWordCloud(contact.username, true);
       fetchDetail(contact.username);
-      fetchSentiment(contact.username, false);
+      fetchSentiment(contact.username, true);
+      fetchRelationDetail(contact.username);
+      fetchControversyDetail(contact.username);
       contactsApi.getCommonGroups(contact.username).then(setCommonGroups).catch(() => {});
     }
-  }, [contact, fetchWordCloud, fetchDetail, fetchSentiment]);
+  }, [contact, initialTab, initialControversyLabel, fetchWordCloud, fetchDetail, fetchSentiment, fetchRelationDetail, fetchControversyDetail]);
 
   const handleSearch = useCallback(async (q: string) => {
     if (!contact || !q.trim()) return;
@@ -104,6 +236,49 @@ export const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose, on
 
   const displayName = contact.remark || contact.nickname || contact.username;
   const avatarUrl = contact.big_head_url || contact.small_head_url;
+  const evidenceDayCount = (date: string) => detail?.daily_heatmap?.[date] ?? 0;
+
+  const relationEvidenceGroups = (relationDetail?.evidence_groups ?? []).map((group) => ({
+    id: group.id,
+    title: group.title,
+    subtitle: group.subtitle,
+    items: (group.items ?? []).map((item, index) => ({
+      id: `${group.id ?? group.title}-${item.date}-${item.time}-${index}`,
+      date: item.date,
+      time: item.time,
+      content: item.content,
+      isMine: item.is_mine,
+      reason: item.reason,
+    })),
+  }));
+
+  const relationMeta = relationDetail as unknown as Dict | null;
+  const controversyMeta = controversyDetail as unknown as Dict | null;
+  const objectiveConfidence =
+    clampConfidenceValue(
+      relationMeta?.objective_confidence ?? relationMeta?.confidence ?? relationMeta?.analysis_confidence
+    ) ?? averageLabelConfidence(relationDetail?.controversial_labels);
+  const controversyConfidence =
+    clampConfidenceValue(
+      controversyMeta?.controversy_confidence ?? controversyMeta?.confidence
+    ) ?? averageLabelConfidence(controversyDetail?.controversial_labels ?? relationDetail?.controversial_labels);
+  const daysSinceLastContact = firstNumber(
+    relationMeta?.days_since_last_contact,
+    relationMeta?.last_gap_days,
+    controversyMeta?.days_since_last_contact,
+    controversyMeta?.last_gap_days,
+    extractLastGapDaysFromLabels(controversyDetail?.controversial_labels),
+    extractLastGapDaysFromLabels(relationDetail?.controversial_labels),
+  );
+  const staleHint =
+    firstNonEmptyText(relationMeta?.stale_hint, controversyMeta?.stale_hint) ??
+    buildStaleHint(daysSinceLastContact);
+  const confidenceReason = firstNonEmptyText(
+    relationMeta?.confidence_reason,
+    relationMeta?.objective_confidence_reason,
+    controversyMeta?.confidence_reason,
+    controversyMeta?.controversy_confidence_reason,
+  );
 
   return (
     <div
@@ -111,7 +286,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose, on
       onClick={onClose}
     >
       <div
-        className="dk-card bg-white rounded-t-[32px] sm:rounded-[48px] w-full sm:max-w-5xl overflow-y-auto max-h-[calc(100dvh-5rem)] sm:max-h-[92vh] shadow-2xl relative p-4 sm:p-8 lg:p-16 animate-in slide-in-from-bottom sm:zoom-in duration-300"
+        className="dk-card bg-white rounded-t-[32px] sm:rounded-[48px] w-full sm:max-w-5xl overflow-y-auto max-h-[92vh] shadow-2xl relative p-6 sm:p-16 animate-in slide-in-from-bottom sm:zoom-in duration-300"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top-right actions */}
@@ -205,7 +380,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose, on
         {/* Tabs + 消息范围切换 */}
         <div className="flex items-center justify-between mb-6 dk-border border-b border-gray-100">
           <div className="flex gap-2">
-            {(['wordcloud', 'detail', 'sentiment', 'search'] as ModalTab[]).map((t) => (
+            {(['wordcloud', 'detail', 'sentiment', 'search', 'analysis'] as ModalTab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => {
@@ -215,13 +390,21 @@ export const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose, on
                   if (t === 'sentiment') fetchSentiment(contact.username, includeMine);
                   if (t === 'search') setTimeout(() => searchInputRef.current?.focus(), 50);
                 }}
-                className={`px-3 sm:px-5 py-2 rounded-t-xl text-xs sm:text-sm font-bold transition border-b-2 -mb-px ${
+                className={`px-5 py-2 rounded-t-xl text-sm font-bold transition border-b-2 -mb-px ${
                   tab === t
                     ? 'text-[#07c160] border-[#07c160]'
                     : 'text-gray-400 border-transparent hover:text-gray-600'
                 }`}
               >
-                {t === 'wordcloud' ? '词云分析' : t === 'detail' ? '深度画像' : t === 'sentiment' ? '情感分析' : '搜索记录'}
+                {t === 'wordcloud'
+                  ? '词云分析'
+                  : t === 'detail'
+                    ? '深度画像'
+                    : t === 'sentiment'
+                      ? '情感分析'
+                      : t === 'search'
+                        ? '搜索记录'
+                        : '关系分析'}
               </button>
             ))}
           </div>
@@ -371,6 +554,94 @@ export const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose, on
               </div>
             ) : null}
           </div>
+        )}
+
+        {tab === 'analysis' && (
+          <div>
+            <div className="mb-4 flex items-center gap-2">
+              <button
+                onClick={() => setAnalysisMode('objective')}
+                className={`px-4 py-2 rounded-full text-sm font-bold transition ${
+                  analysisMode === 'objective'
+                    ? 'bg-[#07c160] text-white shadow-lg shadow-green-100/50'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                客观模式
+              </button>
+              <button
+                onClick={() => setAnalysisMode('controversy')}
+                className={`px-4 py-2 rounded-full text-sm font-bold transition ${
+                  analysisMode === 'controversy'
+                    ? 'bg-[#1d1d1f] text-white shadow-lg shadow-black/10'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                争议模式
+              </button>
+            </div>
+
+            {analysisMode === 'objective' ? (
+              relationLoading ? (
+                <div className="flex items-center justify-center h-48 text-[#07c160] font-bold animate-pulse text-sm">
+                  正在生成关系档案...
+                </div>
+              ) : (
+                <RelationInsightPanel
+                  stageTimeline={(relationDetail?.stage_timeline ?? []).map((item) => ({
+                    id: item.id,
+                    stage: item.stage,
+                    startDate: item.start_date,
+                    endDate: item.end_date,
+                    summary: item.summary,
+                    score: item.score,
+                  }))}
+                  objectiveSummary={relationDetail?.objective_summary ?? ''}
+                  playfulSummary={relationDetail?.playful_summary ?? ''}
+                  metrics={(relationDetail?.metrics ?? []).map((metric) => ({
+                    key: metric.key,
+                    label: metric.label,
+                    value: metric.value,
+                    subValue: metric.sub_value,
+                    trend: metric.trend === 'up' || metric.trend === 'down' || metric.trend === 'flat' ? metric.trend : undefined,
+                    hint: metric.hint,
+                  }))}
+                  evidenceGroups={relationEvidenceGroups}
+                  confidence={objectiveConfidence}
+                  staleHint={staleHint}
+                  confidenceReason={confidenceReason}
+                  onEvidenceClick={(item) => setDayPanel({ date: item.date, count: evidenceDayCount(item.date) })}
+                  emptyText="暂无关系档案数据"
+                />
+              )
+            ) : controversyLoading ? (
+              <div className="flex items-center justify-center h-48 text-rose-500 font-bold animate-pulse text-sm">
+                正在计算争议锐评...
+              </div>
+            ) : (
+              <ControversyPanel
+                mode="controversy"
+                labels={controversyDetail?.controversial_labels ?? []}
+                selectedLabel={selectedLabel}
+                analysisConfidence={controversyConfidence}
+                staleHint={staleHint}
+                confidenceReason={confidenceReason}
+                onSelectLabel={(item) => setSelectedLabel(item.label)}
+                onEvidenceClick={(evidence) => setDayPanel({ date: evidence.date, count: evidenceDayCount(evidence.date) })}
+                emptyText="当前没有可展示的争议标签"
+              />
+            )}
+          </div>
+        )}
+
+        {dayPanel && (
+          <DayChatPanel
+            username={contact.username}
+            date={dayPanel.date}
+            dayCount={dayPanel.count}
+            contactName={displayName}
+            onClose={() => setDayPanel(null)}
+          />
         )}
       </div>
     </div>

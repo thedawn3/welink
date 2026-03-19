@@ -13,6 +13,7 @@ export { MonthlyTrendChart } from './dashboard/MonthlyTrendChart';
 export { HourlyHeatmap } from './dashboard/HourlyHeatmap';
 export { ContactTable } from './dashboard/ContactTable';
 export { DatabaseView } from './dashboard/DatabaseView';
+export { GlobalSearchPanel } from './dashboard/GlobalSearchPanel';
 
 // Contact
 export { ContactModal } from './contact/ContactModal';

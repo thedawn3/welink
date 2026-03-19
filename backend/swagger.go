@@ -15,6 +15,7 @@ func swaggerSpec() []byte {
   "tags": [
     { "name": "初始化", "description": "索引与状态" },
     { "name": "联系人", "description": "好友统计与分析" },
+    { "name": "关系", "description": "关系变化与争议分析" },
     { "name": "群聊", "description": "群聊分析" },
     { "name": "数据库", "description": "原始数据库管理" }
   ],
@@ -193,6 +194,90 @@ func swaggerSpec() []byte {
         }
       }
     },
+    "/relations/overview": {
+      "get": {
+        "tags": ["关系"],
+        "summary": "获取关系变化榜",
+        "responses": {
+          "200": {
+            "description": "关系榜单概览",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RelationOverview" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/relations/detail": {
+      "get": {
+        "tags": ["关系"],
+        "summary": "获取联系人关系档案",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "联系人 wxid"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "关系档案详情",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RelationDetail" }
+              }
+            }
+          },
+          "400": { "description": "缺少 username 参数" }
+        }
+      }
+    },
+    "/controversy/overview": {
+      "get": {
+        "tags": ["关系"],
+        "summary": "获取争议榜单",
+        "responses": {
+          "200": {
+            "description": "争议榜概览",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ControversyOverview" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/controversy/detail": {
+      "get": {
+        "tags": ["关系"],
+        "summary": "获取联系人争议详情",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "联系人 wxid"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "争议详情",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ControversyDetail" }
+              }
+            }
+          },
+          "400": { "description": "缺少 username 参数" }
+        }
+      }
+    },
     "/groups": {
       "get": {
         "tags": ["群聊"],
@@ -354,6 +439,140 @@ func swaggerSpec() []byte {
               }
             }
           }
+        }
+      },
+      "RelationOverview": {
+        "type": "object",
+        "properties": {
+          "warming": { "type": "array", "items": { "$ref": "#/components/schemas/RelationOverviewItem" } },
+          "cooling": { "type": "array", "items": { "$ref": "#/components/schemas/RelationOverviewItem" } },
+          "initiative": { "type": "array", "items": { "$ref": "#/components/schemas/RelationOverviewItem" } },
+          "fast_reply": { "type": "array", "items": { "$ref": "#/components/schemas/RelationOverviewItem" } }
+        }
+      },
+      "RelationOverviewItem": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string" },
+          "name": { "type": "string" },
+          "score": { "type": "number" },
+          "confidence": { "type": "number" },
+          "stale_hint": { "type": "string" },
+          "confidence_reason": { "type": "string" },
+          "why": { "type": "string" },
+          "evidence_preview": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "RelationEvidence": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string" },
+          "time": { "type": "string" },
+          "content": { "type": "string" },
+          "is_mine": { "type": "boolean" },
+          "reason": { "type": "string" }
+        }
+      },
+      "RelationEvidenceGroup": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "subtitle": { "type": "string" },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/RelationEvidence" } }
+        }
+      },
+      "RelationMetricItem": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "label": { "type": "string" },
+          "value": { "type": "string" },
+          "sub_value": { "type": "string" },
+          "trend": { "type": "string" },
+          "hint": { "type": "string" },
+          "raw_value": { "type": "number" }
+        }
+      },
+      "RelationStageItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "stage": { "type": "string" },
+          "start_date": { "type": "string" },
+          "end_date": { "type": "string" },
+          "summary": { "type": "string" },
+          "score": { "type": "number" }
+        }
+      },
+      "ControversyMetric": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "label": { "type": "string" },
+          "value": { "type": "number" },
+          "display_value": { "type": "string" }
+        }
+      },
+      "ControversialLabel": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "score": { "type": "number" },
+          "confidence": { "type": "number" },
+          "stale_hint": { "type": "string" },
+          "confidence_reason": { "type": "string" },
+          "why": { "type": "string" },
+          "metrics": { "type": "array", "items": { "$ref": "#/components/schemas/ControversyMetric" } },
+          "evidence_groups": { "type": "array", "items": { "$ref": "#/components/schemas/RelationEvidence" } }
+        }
+      },
+      "ControversyItem": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string" },
+          "name": { "type": "string" },
+          "label": { "type": "string" },
+          "score": { "type": "number" },
+          "confidence": { "type": "number" },
+          "stale_hint": { "type": "string" },
+          "confidence_reason": { "type": "string" },
+          "why": { "type": "string" },
+          "evidence_preview": { "type": "array", "items": { "$ref": "#/components/schemas/RelationEvidence" } }
+        }
+      },
+      "ControversyOverview": {
+        "type": "object",
+        "properties": {
+          "simp": { "type": "array", "items": { "$ref": "#/components/schemas/ControversyItem" } },
+          "ambiguity": { "type": "array", "items": { "$ref": "#/components/schemas/ControversyItem" } },
+          "faded": { "type": "array", "items": { "$ref": "#/components/schemas/ControversyItem" } },
+          "tool_person": { "type": "array", "items": { "$ref": "#/components/schemas/ControversyItem" } },
+          "cold_violence": { "type": "array", "items": { "$ref": "#/components/schemas/ControversyItem" } }
+        }
+      },
+      "ControversyDetail": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string" },
+          "name": { "type": "string" },
+          "controversial_labels": { "type": "array", "items": { "$ref": "#/components/schemas/ControversialLabel" } }
+        }
+      },
+      "RelationDetail": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string" },
+          "name": { "type": "string" },
+          "confidence": { "type": "number" },
+          "stale_hint": { "type": "string" },
+          "confidence_reason": { "type": "string" },
+          "stage_timeline": { "type": "array", "items": { "$ref": "#/components/schemas/RelationStageItem" } },
+          "objective_summary": { "type": "string" },
+          "playful_summary": { "type": "string" },
+          "metrics": { "type": "array", "items": { "$ref": "#/components/schemas/RelationMetricItem" } },
+          "controversial_labels": { "type": "array", "items": { "$ref": "#/components/schemas/ControversialLabel" } },
+          "evidence_groups": { "type": "array", "items": { "$ref": "#/components/schemas/RelationEvidenceGroup" } }
         }
       },
       "GroupInfo": {

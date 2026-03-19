@@ -35,8 +35,8 @@ import (
 func main() {
 	// 1. 加载配置（config.yaml > 环境变量 > 默认值）
 	cfg := config.Load("")
-	log.Printf("WeLink config: data_dir=%s port=%s timezone=%s workers=%d",
-		cfg.Data.Dir, cfg.Server.Port, cfg.Analysis.Timezone, cfg.Analysis.WorkerCount)
+	log.Printf("WeLink config: data_dir=%s msg_dir=%s port=%s timezone=%s workers=%d",
+		cfg.Data.Dir, cfg.Data.MsgDir, cfg.Server.Port, cfg.Analysis.Timezone, cfg.Analysis.WorkerCount)
 
 	// 2. 初始化数据库管理器（DEMO_MODE 时先生成示例数据）
 	if os.Getenv("DEMO_MODE") == "true" {
@@ -57,6 +57,15 @@ func main() {
 
 	// 4. 初始化 Gin 路由
 	r := gin.Default()
+
+	if cfg.Data.MsgDir != "" {
+		if st, err := os.Stat(cfg.Data.MsgDir); err == nil && st.IsDir() {
+			log.Printf("Serving WeChat media files from %s at /media", cfg.Data.MsgDir)
+			r.StaticFS("/media", http.Dir(cfg.Data.MsgDir))
+		} else if err != nil {
+			log.Printf("Media dir unavailable: %s (%v)", cfg.Data.MsgDir, err)
+		}
+	}
 
 	// 跨域设置
 	r.Use(func(c *gin.Context) {
@@ -110,17 +119,6 @@ func main() {
 			c.JSON(http.StatusOK, contactSvc.GetGroupDayMessages(uname, date))
 		})
 
-		// 群聊搜索聊天记录
-		api.GET("/groups/search", func(c *gin.Context) {
-			uname := c.Query("username")
-			q := c.Query("q")
-			if uname == "" || q == "" {
-				c.JSON(400, gin.H{"error": "username and q required"})
-				return
-			}
-			c.JSON(http.StatusOK, contactSvc.SearchGroupMessages(uname, q))
-		})
-
 		// 群聊深度画像
 		api.GET("/groups/detail", func(c *gin.Context) {
 			uname := c.Query("username")
@@ -151,6 +149,36 @@ func main() {
 			c.JSON(http.StatusOK, contactSvc.GetContactDetail(uname))
 		})
 
+		// 关系变化榜
+		api.GET("/relations/overview", func(c *gin.Context) {
+			c.JSON(http.StatusOK, contactSvc.GetRelationOverview())
+		})
+
+		// 联系人关系档案
+		api.GET("/relations/detail", func(c *gin.Context) {
+			uname := c.Query("username")
+			if uname == "" {
+				c.JSON(400, gin.H{"error": "username required"})
+				return
+			}
+			c.JSON(http.StatusOK, contactSvc.GetRelationDetail(uname))
+		})
+
+		// 争议榜单
+		api.GET("/controversy/overview", func(c *gin.Context) {
+			c.JSON(http.StatusOK, contactSvc.GetControversyOverview())
+		})
+
+		// 联系人争议详情
+		api.GET("/controversy/detail", func(c *gin.Context) {
+			uname := c.Query("username")
+			if uname == "" {
+				c.JSON(400, gin.H{"error": "username required"})
+				return
+			}
+			c.JSON(http.StatusOK, contactSvc.GetControversyDetail(uname))
+		})
+
 		// 某天的聊天记录（日历点击）
 		api.GET("/contacts/messages", func(c *gin.Context) {
 			uname := c.Query("username")
@@ -172,6 +200,21 @@ func main() {
 			}
 			includeMine := c.Query("include_mine") == "true"
 			c.JSON(http.StatusOK, contactSvc.SearchMessages(uname, q, includeMine))
+		})
+
+		// 全量搜索聊天记录
+		api.GET("/search/messages", func(c *gin.Context) {
+			q := c.Query("q")
+			if q == "" {
+				c.JSON(400, gin.H{"error": "q required"})
+				return
+			}
+			includeMine := c.Query("include_mine") == "true"
+			limit := 200
+			if _, err := fmt.Sscanf(c.DefaultQuery("limit", "200"), "%d", &limit); err != nil {
+				limit = 200
+			}
+			c.JSON(http.StatusOK, contactSvc.SearchAllMessages(q, includeMine, limit))
 		})
 
 		// 某月的文本消息（情感分析详情）

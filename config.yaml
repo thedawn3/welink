@@ -12,6 +12,10 @@ data:
   # Docker 默认值：/app/data（由 docker-compose.yml 挂载）
   dir: "/app/data"
 
+  # 微信媒体资源目录（图片/视频/文件），用于后续静态访问或回溯。
+  # Docker 场景下由 compose 挂载到 /app/msg。
+  msg_dir: "/app/msg"
+
 analysis:
   # 时区（影响消息的小时/星期分布统计），使用 IANA 时区名
   # 默认 Asia/Shanghai（UTC+8）

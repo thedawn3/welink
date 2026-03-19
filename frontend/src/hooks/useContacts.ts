@@ -47,7 +47,7 @@ export const useWordCloud = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchWordCloud = useCallback(async (username: string, includeMine = false) => {
+  const fetchWordCloud = useCallback(async (username: string, includeMine = true) => {
     try {
       setLoading(true);
       setData([]);

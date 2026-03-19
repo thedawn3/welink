@@ -4,28 +4,6 @@
 
 <h1 align="center">WeLink — 微信聊天数据分析平台</h1>
 
-<p align="center">
-  <a href="https://github.com/runzhliu/welink/actions/workflows/docker-publish.yml">
-    <img src="https://github.com/runzhliu/welink/actions/workflows/docker-publish.yml/badge.svg" alt="Build" />
-  </a>
-  <a href="https://github.com/runzhliu/welink/pkgs/container/welink%2Fbackend">
-    <img src="https://img.shields.io/badge/ghcr.io-backend-blue?logo=docker" alt="Backend Image" />
-  </a>
-  <a href="https://github.com/runzhliu/welink/pkgs/container/welink%2Ffrontend">
-    <img src="https://img.shields.io/badge/ghcr.io-frontend-blue?logo=docker" alt="Frontend Image" />
-  </a>
-  <a href="LICENSE">
-    <img src="https://img.shields.io/badge/license-AGPL--3.0-green" alt="License" />
-  </a>
-  <a href="https://github.com/runzhliu/welink/stargazers">
-    <img src="https://img.shields.io/github/stars/runzhliu/welink?style=flat" alt="Stars" />
-  </a>
-  <img src="https://img.shields.io/badge/platform-macOS-lightgrey?logo=apple" alt="Platform" />
-  <img src="https://img.shields.io/badge/data-local%20only-brightgreen" alt="Local Only" />
-</p>
-
-<https://github.com/user-attachments/assets/6964e121-c2a0-4595-8cb5-2f65dfa49420>
-
 微信聊天记录里隐藏着你和每个人关系的完整轨迹：
 
 - 第一条消息是哪天发的

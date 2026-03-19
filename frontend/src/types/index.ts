@@ -11,6 +11,12 @@ export interface Contact {
   description: string;
   big_head_url: string;
   small_head_url: string;
+  delete_flag?: number;
+  is_deleted?: boolean;
+  is_biz?: boolean;
+  likely_marketing?: boolean;
+  contact_kind?: string;
+  is_likely_alt?: boolean;
 }
 
 export interface ContactStats extends Contact {
@@ -40,9 +46,7 @@ export interface GlobalStats {
   zero_msg_friends: number;
   total_messages: number;
   monthly_trend: Record<string, number>;
-  group_monthly_trend?: Record<string, number>;
   hourly_heatmap: number[];
-  group_hourly_heatmap?: number[];
   type_distribution: Record<string, number>;
   late_night_ranking: LateNightEntry[];
 }
@@ -51,8 +55,6 @@ export interface ContactDetail {
   hourly_dist: number[];      // [24]
   weekly_dist: number[];      // [7]
   daily_heatmap: Record<string, number>;
-  their_monthly_trend: Record<string, number>;
-  my_monthly_trend: Record<string, number>;
   late_night_count: number;
   money_count: number;
   initiation_count: number;
@@ -122,11 +124,9 @@ export interface GroupDetail {
 }
 
 export interface HealthStatus {
-  hot: number;     // 最近 7 天有消息
-  warm: number;    // 7–30 天
-  cooling: number; // 30–180 天
-  silent: number;  // 180 天以上有消息
-  cold: number;    // 零消息
+  hot: number;   // 最近 7 天有消息
+  warm: number;  // 有消息但超过 7 天
+  cold: number;  // 零消息
 }
 
 export interface FilteredStats {
@@ -156,13 +156,128 @@ export interface ChatMessage {
   date?: string;    // "2024-03-15"，搜索结果中使用
 }
 
+export interface GlobalSearchHit {
+  username: string;
+  name: string;
+  is_group: boolean;
+  time: string;
+  date: string;
+  content: string;
+  is_mine: boolean;
+  type: number;
+}
+
 export interface GroupChatMessage {
   time: string;
   speaker: string;
   content: string;
   is_mine: boolean;
   type: number;
-  date?: string;    // "2024-03-15"，搜索结果中使用
+}
+
+export interface RelationOverviewItem {
+  username: string;
+  name: string;
+  score: number;
+  confidence?: number;
+  why?: string;
+  evidence_preview?: string[];
+  stale_hint?: string;
+  confidence_reason?: string;
+}
+
+export interface RelationOverview {
+  warming: RelationOverviewItem[];
+  cooling: RelationOverviewItem[];
+  initiative: RelationOverviewItem[];
+  fast_reply: RelationOverviewItem[];
+}
+
+export interface RelationEvidence {
+  date: string;
+  time: string;
+  content: string;
+  is_mine: boolean;
+  reason: string;
+}
+
+export interface RelationEvidenceGroup {
+  id?: string;
+  title: string;
+  subtitle?: string;
+  items: RelationEvidence[];
+}
+
+export interface RelationMetricItem {
+  key: string;
+  label: string;
+  value: string;
+  sub_value?: string;
+  trend?: 'up' | 'down' | 'flat' | string;
+  hint?: string;
+  raw_value?: number;
+}
+
+export interface RelationStageItem {
+  id?: string;
+  stage: string;
+  start_date: string;
+  end_date?: string;
+  summary?: string;
+  score?: number;
+}
+
+export interface ControversyMetric {
+  key: string;
+  label: string;
+  value: number;
+  display_value?: string;
+}
+
+export interface ControversialLabel {
+  label: string;
+  score: number;
+  confidence: number;
+  why: string;
+  metrics?: ControversyMetric[];
+  evidence_groups?: RelationEvidence[];
+}
+
+export interface RelationProfileDetail {
+  username: string;
+  name: string;
+  stage_timeline: RelationStageItem[];
+  objective_summary: string;
+  playful_summary: string;
+  metrics: RelationMetricItem[];
+  controversial_labels: ControversialLabel[];
+  evidence_groups: RelationEvidenceGroup[];
+}
+
+export interface ControversyItem {
+  username: string;
+  name: string;
+  label: string;
+  score: number;
+  confidence: number;
+  why: string;
+  evidence_preview: RelationEvidence[];
+  stale_hint?: string;
+  confidence_reason?: string;
+}
+
+export interface ControversyOverview {
+  simp: ControversyItem[];
+  ambiguity: ControversyItem[];
+  faded: ControversyItem[];
+  tool_person: ControversyItem[];
+  cold_violence: ControversyItem[];
+}
+
+export interface ControversyDetail {
+  username: string;
+  name: string;
+  controversial_labels: ControversialLabel[];
 }
 
 // null means "all time"

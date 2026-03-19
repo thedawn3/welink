@@ -2,8 +2,8 @@
  * 联系人深度分析面板 - 小时/周/日历/指纹
  */
 
-import React, { useState, useMemo } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid, Legend } from 'recharts';
+import React, { useState } from 'react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Moon, Gift, MessageSquare, Zap } from 'lucide-react';
 import type { ContactDetail } from '../../types';
 import { CalendarHeatmap } from './CalendarHeatmap';
@@ -23,22 +23,8 @@ const WEEK_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六',
 const HOUR_COLOR = '#10aeff';
 const WEEK_COLOR = '#07c160';
 
-type TrendMode = 'total' | 'their' | 'mine';
-
-const ModeBtn: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
-  <button
-    onClick={onClick}
-    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-      active ? 'bg-[#1d1d1f] text-white' : 'text-gray-400 hover:text-gray-600'
-    }`}
-  >
-    {children}
-  </button>
-);
-
 export const ContactDetailCharts: React.FC<Props> = ({ detail, totalMessages, username, contactName }) => {
   const [dayPanel, setDayPanel] = useState<{ date: string; count: number } | null>(null);
-  const [trendMode, setTrendMode] = useState<TrendMode>('total');
   const hourlyData = detail.hourly_dist.map((v, h) => ({
     label: `${h.toString().padStart(2, '0')}`,
     value: v,
@@ -49,19 +35,6 @@ export const ContactDetailCharts: React.FC<Props> = ({ detail, totalMessages, us
     label: WEEK_LABELS[idx],
     value: detail.weekly_dist[i],
   }));
-
-  const monthlyChartData = useMemo(() => {
-    const months = new Set([
-      ...Object.keys(detail.their_monthly_trend ?? {}),
-      ...Object.keys(detail.my_monthly_trend ?? {}),
-    ]);
-    return Array.from(months).sort().map((m) => ({
-      month: m,
-      their: detail.their_monthly_trend?.[m] ?? 0,
-      mine: detail.my_monthly_trend?.[m] ?? 0,
-      total: (detail.their_monthly_trend?.[m] ?? 0) + (detail.my_monthly_trend?.[m] ?? 0),
-    }));
-  }, [detail]);
 
   const initiationRatio = detail.total_sessions > 0
     ? Math.round(detail.initiation_count / detail.total_sessions * 100)
@@ -160,52 +133,6 @@ export const ContactDetailCharts: React.FC<Props> = ({ detail, totalMessages, us
               <span key={c} className="w-3 h-3 rounded-sm inline-block" style={{ background: c }} />
             ))}
             <span>多</span>
-          </div>
-        </div>
-      )}
-
-      {/* 聊天趋势折线图 */}
-      {monthlyChartData.length > 1 && (
-        <div className="bg-[#f8f9fb] rounded-2xl p-4">
-          <div className="flex items-center justify-between mb-1">
-            <h4 className="text-sm font-black text-gray-600 uppercase tracking-wider">聊天趋势</h4>
-            <div className="flex items-center gap-1 bg-white rounded-xl p-1 shadow-sm">
-              <ModeBtn active={trendMode === 'total'} onClick={() => setTrendMode('total')}>总数</ModeBtn>
-              <ModeBtn active={trendMode === 'their'} onClick={() => setTrendMode('their')}>对方</ModeBtn>
-              <ModeBtn active={trendMode === 'mine'}  onClick={() => setTrendMode('mine')}>我</ModeBtn>
-            </div>
-          </div>
-          <p className="text-xs text-gray-400 mb-3">每月消息条数折线图</p>
-          <div className="h-[160px] sm:h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={monthlyChartData} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
-                <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#bbb' }} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 10, fill: '#bbb' }} tickLine={false} axisLine={false}
-                  tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} />
-                <Tooltip
-                  contentStyle={{ borderRadius: 10, fontSize: 12, border: '1px solid #eee', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-                  formatter={(v: number, name: string) => [
-                    `${v.toLocaleString()} 条`,
-                    name === 'total' ? '总数' : name === 'their' ? `${contactName}` : '我',
-                  ]}
-                />
-                {trendMode === 'total' && (
-                  <Line type="monotone" dataKey="total" stroke="#07c160" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
-                )}
-                {trendMode === 'their' && (
-                  <Line type="monotone" dataKey="their" stroke="#576b95" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
-                )}
-                {trendMode === 'mine' && (
-                  <Line type="monotone" dataKey="mine" stroke="#10aeff" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
-                )}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex gap-4 mt-2 text-xs text-gray-400">
-            {trendMode === 'total' && <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-[#07c160] inline-block rounded" />总数</span>}
-            {trendMode === 'their' && <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-[#576b95] inline-block rounded" />{contactName}</span>}
-            {trendMode === 'mine'  && <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-[#10aeff] inline-block rounded" />我</span>}
           </div>
         </div>
       )}

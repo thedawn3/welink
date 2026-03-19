@@ -4,7 +4,27 @@
  */
 
 import axios from 'axios';
-import type { ContactStats, GlobalStats, WordCount, DBInfo, BackendStatus, TableInfo, ColumnInfo, TableData, ContactDetail, GroupInfo, GroupDetail, FilteredStats, SentimentResult, GroupChatMessage } from '../types';
+import type {
+  ContactStats,
+  GlobalStats,
+  WordCount,
+  DBInfo,
+  BackendStatus,
+  TableInfo,
+  ColumnInfo,
+  TableData,
+  ContactDetail,
+  GroupInfo,
+  GroupDetail,
+  FilteredStats,
+  SentimentResult,
+  GroupChatMessage,
+  GlobalSearchHit,
+  RelationOverview,
+  RelationProfileDetail,
+  ControversyOverview,
+  ControversyDetail,
+} from '../types';
 
 // 配置 axios 实例
 const api = axios.create({
@@ -48,7 +68,7 @@ export const contactsApi = {
   /**
    * 获取指定联系人的词云数据
    */
-  getWordCloud: (username: string, includeMine = false) =>
+  getWordCloud: (username: string, includeMine = true) =>
     api.get<void, WordCount[]>('/contacts/wordcloud', {
       params: { username, ...(includeMine ? { include_mine: 'true' } : {}) }
     }),
@@ -72,15 +92,20 @@ export const contactsApi = {
   /**
    * 搜索联系人聊天记录
    */
-  searchMessages: (username: string, q: string, includeMine = false) =>
+  searchMessages: (username: string, q: string, includeMine = true) =>
     api.get<void, import('../types').ChatMessage[]>('/contacts/search', {
       params: { username, q, ...(includeMine ? { include_mine: 'true' } : {}) }
+    }),
+
+  searchAllMessages: (q: string, includeMine = true, limit = 200) =>
+    api.get<void, GlobalSearchHit[]>('/search/messages', {
+      params: { q, limit, ...(includeMine ? { include_mine: 'true' } : {}) }
     }),
 
   /**
    * 获取某月的文本消息（情感分析详情）
    */
-  getMonthMessages: (username: string, month: string, includeMine = false) =>
+  getMonthMessages: (username: string, month: string, includeMine = true) =>
     api.get<void, import('../types').ChatMessage[]>('/contacts/messages/month', {
       params: { username, month, ...(includeMine ? { include_mine: 'true' } : {}) }
     }),
@@ -88,7 +113,7 @@ export const contactsApi = {
   /**
    * 获取情感分析数据
    */
-  getSentiment: (username: string, includeMine = false) =>
+  getSentiment: (username: string, includeMine = true) =>
     api.get<void, SentimentResult>('/contacts/sentiment', {
       params: { username, ...(includeMine ? { include_mine: 'true' } : {}) }
     }),
@@ -176,9 +201,20 @@ export const groupsApi = {
 
   getDayMessages: (username: string, date: string) =>
     api.get<void, GroupChatMessage[]>('/groups/messages', { params: { username, date } }),
+};
 
-  searchMessages: (username: string, q: string) =>
-    api.get<void, GroupChatMessage[]>('/groups/search', { params: { username, q } }),
+export const relationsApi = {
+  getOverview: () =>
+    api.get<void, RelationOverview>('/relations/overview'),
+
+  getDetail: (username: string) =>
+    api.get<void, RelationProfileDetail>('/relations/detail', { params: { username } }),
+
+  getControversyOverview: () =>
+    api.get<void, ControversyOverview>('/controversy/overview'),
+
+  getControversyDetail: (username: string) =>
+    api.get<void, ControversyDetail>('/controversy/detail', { params: { username } }),
 };
 
 export default api;

@@ -65,7 +65,7 @@ const AddInput: React.FC<{
   };
 
   return (
-    <div className="flex flex-col sm:flex-row gap-2 mt-3">
+    <div className="flex gap-2 mt-3">
       <input
         type="text"
         value={value}
@@ -108,7 +108,7 @@ export const PrivacyView: React.FC<PrivacyViewProps> = ({
   };
 
   return (
-    <div className="max-w-none sm:max-w-2xl">
+    <div className="max-w-2xl">
       <div className="mb-8">
         <h1 className="text-2xl font-black text-[#1d1d1f] mb-1">隐私屏蔽</h1>
         <p className="text-sm text-gray-400">被屏蔽的联系人和群聊将从所有列表中隐藏，数据仍保留在数据库中。</p>

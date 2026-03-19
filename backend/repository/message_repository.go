@@ -94,3 +94,11 @@ func (r *MessageRepository) GetUserStats(username string) UserMsgStats {
 	}
 	return stats
 }
+
+func (r *MessageRepository) HasIndexedTable(username string) bool {
+	tableName := db.GetTableName(username)
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.tableMap[tableName]
+	return ok
+}

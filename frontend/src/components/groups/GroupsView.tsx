@@ -2,10 +2,10 @@
  * 群聊画像视图
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, MessageSquare, ChevronRight, Loader2, X, BarChart2, EyeOff, Search } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Users, MessageSquare, ChevronRight, Loader2, X, BarChart2, EyeOff } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import type { GroupInfo, GroupDetail, ContactStats, GroupChatMessage } from '../../types';
+import type { GroupInfo, GroupDetail, ContactStats } from '../../types';
 import { groupsApi } from '../../services/api';
 import { CalendarHeatmap } from '../contact/CalendarHeatmap';
 import { GroupDayChatPanel } from './GroupDayChatPanel';
@@ -35,47 +35,15 @@ export const GroupDetailModal: React.FC<GroupDetailModalProps> = ({ group, onClo
       c.username === displayName
     ) ?? null;
   };
-  const [tab, setTab] = useState<'portrait' | 'search'>('portrait');
   const [detail, setDetail] = useState<GroupDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [dayPanel, setDayPanel] = useState<{ date: string; count: number } | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<GroupChatMessage[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchDone, setSearchDone] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    const poll = () => {
-      groupsApi.getDetail(group.username).then((d) => {
-        if (cancelled) return;
-        if (d) {
-          setDetail(d);
-          setLoading(false);
-        } else {
-          // 后台还在计算，2秒后重试
-          setTimeout(() => { if (!cancelled) poll(); }, 2000);
-        }
-      }).catch(() => { if (!cancelled) setLoading(false); });
-    };
-    poll();
-    return () => { cancelled = true; };
-  }, [group.username]);
-
-  const handleSearch = useCallback(async (q: string) => {
-    if (!q.trim()) return;
-    setSearchLoading(true);
-    setSearchDone(false);
-    try {
-      const results = await groupsApi.searchMessages(group.username, q.trim());
-      setSearchResults(results ?? []);
-      setSearchDone(true);
-    } catch (e) {
-      console.error('Search failed', e);
-    } finally {
-      setSearchLoading(false);
-    }
+    groupsApi.getDetail(group.username).then((d) => {
+      setDetail(d);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, [group.username]);
 
   const hourlyData = detail?.hourly_dist.map((v, h) => ({
@@ -97,7 +65,7 @@ export const GroupDetailModal: React.FC<GroupDetailModalProps> = ({ group, onClo
       onClick={onClose}
     >
       <div
-        className="dk-card bg-white rounded-t-[32px] sm:rounded-[48px] w-full sm:max-w-4xl overflow-y-auto max-h-[calc(100dvh-5rem)] sm:max-h-[92vh] shadow-2xl relative p-4 sm:p-8 lg:p-12"
+        className="dk-card bg-white rounded-t-[32px] sm:rounded-[48px] w-full sm:max-w-4xl overflow-y-auto max-h-[92vh] shadow-2xl relative p-6 sm:p-12"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="absolute top-5 right-5 flex items-center gap-2">
@@ -141,84 +109,11 @@ export const GroupDetailModal: React.FC<GroupDetailModalProps> = ({ group, onClo
           </div>
         </div>
 
-        {/* Tab bar */}
-        <div className="flex gap-2 mb-6 border-b border-gray-100">
-          {(['portrait', 'search'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => {
-                setTab(t);
-                if (t === 'search') setTimeout(() => searchInputRef.current?.focus(), 50);
-              }}
-              className={`px-5 py-2 rounded-t-xl text-sm font-bold transition border-b-2 -mb-px ${
-                tab === t ? 'text-[#07c160] border-[#07c160]' : 'text-gray-400 border-transparent hover:text-gray-600'
-              }`}
-            >
-              {t === 'portrait' ? '群聊画像' : '搜索记录'}
-            </button>
-          ))}
-        </div>
-
-        {tab === 'search' && (
-          <div>
-            <form onSubmit={(e) => { e.preventDefault(); handleSearch(searchQuery); }} className="flex gap-2 mb-6">
-              <div className="flex-1 relative">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" strokeWidth={2.5} />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="搜索群聊内容..."
-                  className="w-full pl-9 pr-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-[#07c160] transition-colors bg-gray-50"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={!searchQuery.trim() || searchLoading}
-                className="px-5 py-2.5 bg-[#07c160] text-white rounded-2xl text-sm font-bold disabled:opacity-40 hover:bg-[#06ad56] transition-colors"
-              >
-                搜索
-              </button>
-            </form>
-
-            {searchLoading ? (
-              <div className="flex items-center justify-center h-40">
-                <Loader2 size={28} className="text-[#07c160] animate-spin" />
-              </div>
-            ) : searchDone && searchResults.length === 0 ? (
-              <div className="text-center text-gray-300 py-12 text-sm">未找到相关消息</div>
-            ) : searchResults.length > 0 ? (
-              <div>
-                <p className="text-xs text-gray-400 mb-4">找到 {searchResults.length} 条消息{searchResults.length >= 200 ? '（最多显示 200 条）' : ''}</p>
-                <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
-                  {searchResults.map((msg, i) => (
-                    <div key={i} className="flex items-start gap-3 py-2 border-b border-gray-50 last:border-0">
-                      <div className="w-7 h-7 rounded-full bg-[#576b95] flex items-center justify-center text-white text-[9px] font-black flex-shrink-0 mt-0.5">
-                        {msg.speaker.charAt(0)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2 mb-0.5">
-                          <span className="text-xs font-bold text-gray-600">{msg.speaker}</span>
-                          <span className="text-[10px] text-gray-300">{msg.date} {msg.time}</span>
-                        </div>
-                        <div className="text-sm text-[#1d1d1f] leading-relaxed break-words whitespace-pre-wrap bg-[#f0f0f0] rounded-2xl rounded-tl-sm px-3 py-2">
-                          {msg.content}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        )}
-
-        {tab === 'portrait' && loading ? (
+        {loading ? (
           <div className="flex items-center justify-center h-64">
             <Loader2 size={32} className="text-[#07c160] animate-spin" />
           </div>
-        ) : tab === 'portrait' && detail ? (
+        ) : detail ? (
           <div className="space-y-6">
             {/* 成员发言排行 */}
             {detail.member_rank.length > 0 && (
@@ -235,7 +130,7 @@ export const GroupDetailModal: React.FC<GroupDetailModalProps> = ({ group, onClo
                       <span className={`w-5 text-xs font-black text-right flex-shrink-0 ${
                         i === 0 ? 'text-yellow-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-orange-400' : 'text-gray-300'
                       }`}>{i + 1}</span>
-                      <div className="flex items-center gap-1.5 w-24 sm:w-36 flex-shrink-0 min-w-0">
+                      <div className="flex items-center gap-1.5 w-36 flex-shrink-0 min-w-0">
                         <span
                           className={`text-sm font-semibold dk-text truncate ${contact ? 'text-[#07c160] cursor-pointer hover:underline' : 'text-[#1d1d1f]'}`}
                           onClick={() => contact && onContactClick(contact)}
@@ -341,9 +236,9 @@ export const GroupDetailModal: React.FC<GroupDetailModalProps> = ({ group, onClo
               </div>
             )}
           </div>
-        ) : tab === 'portrait' ? (
+        ) : (
           <div className="text-center text-gray-300 py-12">暂无数据</div>
-        ) : null}
+        )}
       </div>
 
       {dayPanel && (
@@ -418,12 +313,12 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ allContacts, onContactCl
       <div className="grid grid-cols-2 gap-4">
         <div className="dk-card bg-white dk-border border border-gray-100 rounded-2xl p-5">
           <Users size={20} className="text-[#10aeff] mb-2" strokeWidth={2.5} />
-          <div className="dk-text text-2xl sm:text-3xl font-black text-[#1d1d1f]">{groups.length}</div>
+          <div className="dk-text text-3xl font-black text-[#1d1d1f]">{groups.length}</div>
           <div className="dk-text-muted text-xs text-gray-500 mt-1">群聊总数</div>
         </div>
         <div className="dk-card bg-white dk-border border border-gray-100 rounded-2xl p-5">
           <MessageSquare size={20} className="text-[#07c160] mb-2" strokeWidth={2.5} />
-          <div className="dk-text text-2xl sm:text-3xl font-black text-[#1d1d1f]">
+          <div className="dk-text text-3xl font-black text-[#1d1d1f]">
             {(groups.reduce((s, g) => s + g.total_messages, 0) / 10000).toFixed(1)}万
           </div>
           <div className="dk-text-muted text-xs text-gray-500 mt-1">群消息总量</div>

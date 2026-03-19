@@ -119,7 +119,7 @@ const MonthMessagesPanel: React.FC<MonthPanelProps> = ({ username, month, contac
   );
 };
 
-export const SentimentChart: React.FC<Props> = ({ data, username, contactName, includeMine = false }) => {
+export const SentimentChart: React.FC<Props> = ({ data, username, contactName, includeMine = true }) => {
   const { monthly, overall, positive, negative, neutral } = data;
   const total = positive + negative + neutral;
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
