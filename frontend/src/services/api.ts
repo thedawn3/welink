@@ -24,6 +24,8 @@ import type {
   RelationProfileDetail,
   ControversyOverview,
   ControversyDetail,
+  ContactHistoryQuery,
+  ContactHistoryRawResponse,
 } from '../types';
 
 // 配置 axios 实例
@@ -87,6 +89,11 @@ export const contactsApi = {
   getDayMessages: (username: string, date: string) =>
     api.get<void, import('../types').ChatMessage[]>('/contacts/messages', {
       params: { username, date }
+    }),
+
+  getMessageHistory: (username: string, query: ContactHistoryQuery = {}) =>
+    api.get<void, ContactHistoryRawResponse>('/contacts/messages/history', {
+      params: { username, ...query }
     }),
 
   /**

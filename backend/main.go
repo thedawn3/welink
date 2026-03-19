@@ -190,6 +190,32 @@ func main() {
 			c.JSON(http.StatusOK, contactSvc.GetDayMessages(uname, date))
 		})
 
+		// 联系人历史聊天时间线
+		api.GET("/contacts/messages/history", func(c *gin.Context) {
+			uname := c.Query("username")
+			if uname == "" {
+				c.JSON(400, gin.H{"error": "username required"})
+				return
+			}
+
+			before := int64(0)
+			if value := c.Query("before"); value != "" {
+				if _, err := fmt.Sscanf(value, "%d", &before); err != nil {
+					c.JSON(400, gin.H{"error": "before must be unix timestamp"})
+					return
+				}
+			}
+
+			limit := 200
+			if value := c.Query("limit"); value != "" {
+				if _, err := fmt.Sscanf(value, "%d", &limit); err != nil {
+					c.JSON(400, gin.H{"error": "limit must be integer"})
+					return
+				}
+			}
+			c.JSON(http.StatusOK, contactSvc.GetMessageHistory(uname, before, limit))
+		})
+
 		// 搜索联系人聊天记录
 		api.GET("/contacts/search", func(c *gin.Context) {
 			uname := c.Query("username")

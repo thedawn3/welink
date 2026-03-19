@@ -16,9 +16,9 @@ import type {
 import { WordCloudCanvas } from './WordCloudCanvas';
 import { ContactDetailCharts } from './ContactDetailCharts';
 import { SentimentChart } from './SentimentChart';
-import { DayChatPanel } from './DayChatPanel';
 import { RelationInsightPanel } from './RelationInsightPanel';
 import { ControversyPanel } from './ControversyPanel';
+import { ContactTimelinePanel } from './ContactTimelinePanel';
 import { useWordCloud } from '../../hooks/useContacts';
 import { contactsApi, relationsApi } from '../../services/api';
 
@@ -31,7 +31,7 @@ interface ContactModalProps {
   onBlock?: (username: string) => void;
 }
 
-type ModalTab = 'wordcloud' | 'detail' | 'sentiment' | 'search' | 'analysis';
+type ModalTab = 'timeline' | 'wordcloud' | 'detail' | 'sentiment' | 'search' | 'analysis';
 type AnalysisMode = 'objective' | 'controversy';
 
 type Dict = Record<string, unknown>;
@@ -124,8 +124,8 @@ export const ContactModal: React.FC<ContactModalProps> = ({
   const [controversyLoading, setControversyLoading] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState<string | undefined>(initialControversyLabel);
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>(initialControversyLabel ? 'controversy' : 'objective');
-  const [dayPanel, setDayPanel] = useState<{ date: string; count: number } | null>(null);
   const [includeMine, setIncludeMine] = useState(true);
+  const [timelineFocus, setTimelineFocus] = useState<{ date: string; key: number } | null>(null);
   const [commonGroups, setCommonGroups] = useState<GroupInfo[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
@@ -193,7 +193,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
       setControversyDetail(null);
       setSelectedLabel(initialControversyLabel);
       setAnalysisMode(initialControversyLabel ? 'controversy' : 'objective');
-      setDayPanel(null);
+      setTimelineFocus(null);
       setIncludeMine(true);
       setCommonGroups([]);
       setSearchQuery('');
@@ -236,7 +236,11 @@ export const ContactModal: React.FC<ContactModalProps> = ({
 
   const displayName = contact.remark || contact.nickname || contact.username;
   const avatarUrl = contact.big_head_url || contact.small_head_url;
-  const evidenceDayCount = (date: string) => detail?.daily_heatmap?.[date] ?? 0;
+
+  const focusTimelineDate = (date: string) => {
+    setTimelineFocus({ date, key: Date.now() });
+    setTab('timeline');
+  };
 
   const relationEvidenceGroups = (relationDetail?.evidence_groups ?? []).map((group) => ({
     id: group.id,
@@ -380,7 +384,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
         {/* Tabs + 消息范围切换 */}
         <div className="flex items-center justify-between mb-6 dk-border border-b border-gray-100">
           <div className="flex gap-2">
-            {(['wordcloud', 'detail', 'sentiment', 'search', 'analysis'] as ModalTab[]).map((t) => (
+            {(['timeline', 'wordcloud', 'detail', 'sentiment', 'search', 'analysis'] as ModalTab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => {
@@ -396,7 +400,9 @@ export const ContactModal: React.FC<ContactModalProps> = ({
                     : 'text-gray-400 border-transparent hover:text-gray-600'
                 }`}
               >
-                {t === 'wordcloud'
+                {t === 'timeline'
+                  ? '聊天记录'
+                  : t === 'wordcloud'
                   ? '词云分析'
                   : t === 'detail'
                     ? '深度画像'
@@ -424,6 +430,15 @@ export const ContactModal: React.FC<ContactModalProps> = ({
             </button>
           )}
         </div>
+
+        {tab === 'timeline' && (
+          <ContactTimelinePanel
+            username={contact.username}
+            contactName={displayName}
+            focusDate={timelineFocus?.date}
+            focusKey={timelineFocus?.key}
+          />
+        )}
 
         {tab === 'wordcloud' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-10">
@@ -479,6 +494,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
               totalMessages={contact.total_messages}
               username={contact.username}
               contactName={displayName}
+              onHeatmapDayClick={(date) => focusTimelineDate(date)}
             />
           ) : (
             <div className="text-center text-gray-300 py-12">暂无深度数据</div>
@@ -610,7 +626,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
                   confidence={objectiveConfidence}
                   staleHint={staleHint}
                   confidenceReason={confidenceReason}
-                  onEvidenceClick={(item) => setDayPanel({ date: item.date, count: evidenceDayCount(item.date) })}
+                  onEvidenceClick={(item) => focusTimelineDate(item.date)}
                   emptyText="暂无关系档案数据"
                 />
               )
@@ -627,21 +643,11 @@ export const ContactModal: React.FC<ContactModalProps> = ({
                 staleHint={staleHint}
                 confidenceReason={confidenceReason}
                 onSelectLabel={(item) => setSelectedLabel(item.label)}
-                onEvidenceClick={(evidence) => setDayPanel({ date: evidence.date, count: evidenceDayCount(evidence.date) })}
+                onEvidenceClick={(evidence) => focusTimelineDate(evidence.date)}
                 emptyText="当前没有可展示的争议标签"
               />
             )}
           </div>
-        )}
-
-        {dayPanel && (
-          <DayChatPanel
-            username={contact.username}
-            date={dayPanel.date}
-            dayCount={dayPanel.count}
-            contactName={displayName}
-            onClose={() => setDayPanel(null)}
-          />
         )}
       </div>
     </div>

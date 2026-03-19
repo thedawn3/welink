@@ -55,6 +55,8 @@ curl http://localhost:8080/api/status
 
 若你改了 `.env` 里的端口，请把上面的 `8080` 替换成实际 `WELINK_BACKEND_PORT`。
 
+若你后面要接 MCP / AI，先确认 `/api/status` 里的 `is_initialized` 已经变成 `true`；索引未完成前，AI 看到的数据也不完整。
+
 ## Windows 注意事项
 
 - `.env` 里的路径建议统一写成正斜杠，例如 `C:/Users/...`。

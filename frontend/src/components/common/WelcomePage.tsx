@@ -3,7 +3,7 @@
  */
 
 import React, { useState } from 'react';
-import { ChevronRight, Loader2, Apple, Monitor, Terminal, Database, ExternalLink, Github, Calendar, FileText } from 'lucide-react';
+import { ChevronRight, Loader2, Apple, Monitor, Terminal, Database, ExternalLink, Github, Calendar, FileText, Bot } from 'lucide-react';
 
 interface TimeOption {
   label: string;
@@ -33,6 +33,7 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
   const [customTo, setCustomTo] = useState(today);
   const repoUrl = 'https://github.com/runzhliu/welink';
   const docsBaseUrl = `${repoUrl}/tree/main/docs`;
+  const mcpDocsUrl = `${repoUrl}/tree/main/mcp-server/README.md`;
 
   const handleStart = () => {
     const opt = OPTIONS[selected];
@@ -215,6 +216,72 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
               {' '}提供，感谢开源贡献
             </p>
           </div>
+        </div>
+
+        {/* MCP / AI Onboarding */}
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6 mb-4">
+          <div className="flex items-start gap-3 mb-4">
+            <div className="w-10 h-10 rounded-2xl bg-[#1d1d1f] text-white flex items-center justify-center flex-shrink-0">
+              <Bot size={18} />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-[#1d1d1f]">AI / MCP 接入</h2>
+              <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                WeLink 可以作为 MCP 数据源接给 AI。接入后，Claude Code 等客户端可以直接查询、检索、总结和分析你本地的微信聊天数据。
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-[#f8f9fb] border border-gray-100 p-4 mb-4">
+            <p className="text-xs font-bold text-[#1d1d1f] mb-3">前置顺序</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {[
+                '1. 先确认电脑微信里已经能看到完整聊天记录',
+                '2. 再完成解密，拿到标准数据库目录',
+                '3. 启动 WeLink 并等待索引完成',
+                '4. 最后再把 WeLink 连接到 MCP / AI 客户端',
+              ].map((item) => (
+                <div key={item} className="rounded-2xl bg-white px-3 py-2 text-xs text-gray-600 border border-gray-100">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 mb-4">
+            <div className="rounded-2xl border border-gray-100 p-4">
+              <p className="text-xs font-bold text-[#1d1d1f] mb-2">接入后的价值</p>
+              <div className="space-y-2 text-xs text-gray-500 leading-relaxed">
+                <p>AI 可以基于本地数据回答聊天对象、关系变化、关键词、时间趋势等问题。</p>
+                <p>你可以把关系分析和原始聊天记录串起来看，不需要手工翻很多页面。</p>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-gray-100 p-4">
+              <p className="text-xs font-bold text-[#1d1d1f] mb-2">3 步接入摘要</p>
+              <div className="space-y-2 text-xs text-gray-500 leading-relaxed">
+                <p>1. 完成导入、解密和目录校验。</p>
+                <p>2. 先在 WeLink 里完成索引，确认聊天数据能正常分析。</p>
+                <p>3. 按 MCP 文档把 WeLink 挂到 AI 客户端。</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4">
+            <p className="text-xs font-bold text-amber-800">索引未完成前，AI 看到的结果也是不完整的</p>
+            <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+              如果 `is_initialized` 还没变成 `true`，MCP 返回的数据可能为空、偏少，或者只覆盖部分联系人。
+            </p>
+          </div>
+
+          <a
+            href={mcpDocsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#1d1d1f] px-4 py-2 text-xs font-semibold text-white hover:bg-[#333] transition-colors"
+          >
+            查看完整 MCP 接入文档
+            <ExternalLink size={12} />
+          </a>
         </div>
 
         {/* Time Range Selection */}

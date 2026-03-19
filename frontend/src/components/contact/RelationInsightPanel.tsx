@@ -56,9 +56,9 @@ const trendClass: Record<NonNullable<RelationMetricItem['trend']>, string> = {
 };
 
 const trendText: Record<NonNullable<RelationMetricItem['trend']>, string> = {
-  up: 'Rising',
-  down: 'Falling',
-  flat: 'Flat',
+  up: '升温',
+  down: '降温',
+  flat: '持平',
 };
 
 function renderMetricValue(value: string | number): string {
@@ -81,7 +81,7 @@ export const RelationInsightPanel: React.FC<RelationInsightPanelProps> = ({
   onEvidenceClick,
   className,
   loading = false,
-  emptyText = 'No relation insight yet.',
+  emptyText = '暂无关系分析数据。',
 }) => {
   const hasContent =
     stageTimeline.length > 0 ||
@@ -137,7 +137,7 @@ export const RelationInsightPanel: React.FC<RelationInsightPanelProps> = ({
             </div>
             {normalizedConfidence !== null && (
               <span className="inline-flex items-center rounded-full border border-emerald-200 bg-white px-3 py-1 text-sm font-black text-emerald-600">
-                confidence {normalizedConfidence}%
+                可信度 {normalizedConfidence}%
               </span>
             )}
           </div>
@@ -156,13 +156,13 @@ export const RelationInsightPanel: React.FC<RelationInsightPanelProps> = ({
 
       <div className="rounded-3xl border border-gray-100 bg-white p-4 sm:p-6">
         <div className="flex items-center justify-between gap-3 mb-4">
-          <h4 className="text-sm sm:text-base font-black text-[#1d1d1f] tracking-tight">Stage Timeline</h4>
+          <h4 className="text-sm sm:text-base font-black text-[#1d1d1f] tracking-tight">关系阶段时间线</h4>
           <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
-            {stageTimeline.length} stages
+            {stageTimeline.length} 个阶段
           </span>
         </div>
         {stageTimeline.length === 0 ? (
-          <p className="text-sm text-gray-400">No timeline data.</p>
+          <p className="text-sm text-gray-400">暂无阶段时间线数据。</p>
         ) : (
           <ol className="space-y-3 sm:space-y-4">
             {stageTimeline.map((item, index) => (
@@ -176,7 +176,7 @@ export const RelationInsightPanel: React.FC<RelationInsightPanelProps> = ({
                     <p className="text-sm sm:text-[15px] font-bold text-[#1d1d1f]">{item.stage}</p>
                     <p className="text-xs text-gray-400 mt-0.5">
                       {item.startDate}
-                      {item.endDate ? ` - ${item.endDate}` : ' - now'}
+                      {item.endDate ? ` - ${item.endDate}` : ' - 至今'}
                     </p>
                   </div>
                   {typeof item.score === 'number' && (
@@ -194,28 +194,28 @@ export const RelationInsightPanel: React.FC<RelationInsightPanelProps> = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
         <article className="rounded-3xl border border-gray-100 bg-white p-4 sm:p-6">
-          <h4 className="text-sm sm:text-base font-black text-[#1d1d1f] tracking-tight mb-2">Objective Summary</h4>
+          <h4 className="text-sm sm:text-base font-black text-[#1d1d1f] tracking-tight mb-2">客观分析</h4>
           <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
-            {objectiveSummary.trim() || 'No objective summary.'}
+            {objectiveSummary.trim() || '暂无客观分析结论。'}
           </p>
         </article>
         <article className="rounded-3xl border border-gray-100 bg-gradient-to-br from-[#f6fffa] to-[#f8fbff] p-4 sm:p-6">
-          <h4 className="text-sm sm:text-base font-black text-[#1d1d1f] tracking-tight mb-2">Playful Summary</h4>
+          <h4 className="text-sm sm:text-base font-black text-[#1d1d1f] tracking-tight mb-2">娱乐解读</h4>
           <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
-            {playfulSummary.trim() || 'No playful summary.'}
+            {playfulSummary.trim() || '暂无娱乐解读。'}
           </p>
         </article>
       </div>
 
       <div className="rounded-3xl border border-gray-100 bg-white p-4 sm:p-6">
         <div className="flex items-center justify-between gap-3 mb-4">
-          <h4 className="text-sm sm:text-base font-black text-[#1d1d1f] tracking-tight">Core Metrics</h4>
+          <h4 className="text-sm sm:text-base font-black text-[#1d1d1f] tracking-tight">核心指标</h4>
           <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
-            {metrics.length} items
+            {metrics.length} 项
           </span>
         </div>
         {metrics.length === 0 ? (
-          <p className="text-sm text-gray-400">No metric data.</p>
+          <p className="text-sm text-gray-400">暂无指标数据。</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
             {metrics.map((metric) => (
@@ -239,13 +239,13 @@ export const RelationInsightPanel: React.FC<RelationInsightPanelProps> = ({
 
       <div className="rounded-3xl border border-gray-100 bg-white p-4 sm:p-6">
         <div className="flex items-center justify-between gap-3 mb-4">
-          <h4 className="text-sm sm:text-base font-black text-[#1d1d1f] tracking-tight">Evidence Groups</h4>
+          <h4 className="text-sm sm:text-base font-black text-[#1d1d1f] tracking-tight">证据分组</h4>
           <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
-            {evidenceGroups.length} groups
+            {evidenceGroups.length} 组
           </span>
         </div>
         {evidenceGroups.length === 0 ? (
-          <p className="text-sm text-gray-400">No evidence data.</p>
+          <p className="text-sm text-gray-400">暂无证据数据。</p>
         ) : (
           <div className="space-y-4">
             {evidenceGroups.map((group, groupIndex) => (
@@ -255,7 +255,7 @@ export const RelationInsightPanel: React.FC<RelationInsightPanelProps> = ({
                   {group.subtitle && <p className="text-xs text-gray-400 mt-0.5">{group.subtitle}</p>}
                 </div>
                 {group.items.length === 0 ? (
-                  <p className="text-xs text-gray-400">No evidence in this group.</p>
+                  <p className="text-xs text-gray-400">这一组暂无证据消息。</p>
                 ) : (
                   <ul className="space-y-2.5">
                     {group.items.map((item, itemIndex) => {
@@ -272,11 +272,11 @@ export const RelationInsightPanel: React.FC<RelationInsightPanelProps> = ({
                           >
                             <div className="flex items-center justify-between gap-3 mb-1">
                               <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                                {item.date} {item.time} · {item.isMine ? 'Me' : 'Them'}
+                                {item.date} {item.time} · {item.isMine ? '我发送' : '对方发送'}
                               </p>
-                              {clickable && <span className="text-[11px] font-semibold text-[#07c160]">Jump</span>}
+                              {clickable && <span className="text-[11px] font-semibold text-[#07c160]">查看原文</span>}
                             </div>
-                            <p className="text-sm text-gray-700 leading-relaxed line-clamp-2 whitespace-pre-wrap">{item.content || '[Empty]'}</p>
+                            <p className="text-sm text-gray-700 leading-relaxed line-clamp-2 whitespace-pre-wrap">{item.content || '[空消息]'}</p>
                             <p className="mt-1.5 text-xs text-gray-500">{item.reason}</p>
                           </button>
                         </li>

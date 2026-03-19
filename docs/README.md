@@ -7,6 +7,7 @@
 | [setup-macos.md](./setup-macos.md) | macOS 全流程：导入、解密准备、目录校验、启动 |
 | [setup-windows.md](./setup-windows.md) | Windows 全流程：导入、解密准备、目录校验、启动 |
 | [data-layout-and-troubleshooting.md](./data-layout-and-troubleshooting.md) | 目录契约、环境变量、常见错误、排障步骤 |
+| [../mcp-server/README.md](../mcp-server/README.md) | MCP 接入：让 AI 直接查询本地聊天数据 |
 
 ## 开发与协作
 

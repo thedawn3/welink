@@ -1,6 +1,7 @@
 package service
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"regexp"
@@ -860,11 +861,12 @@ func (s *ContactService) GetContactDetail(username string) *ContactDetail {
 
 // ChatMessage 单条聊天消息（用于日历点击查看当天记录）
 type ChatMessage struct {
-	Time    string `json:"time"`           // "14:23"
-	Content string `json:"content"`        // 消息内容或类型描述
-	IsMine  bool   `json:"is_mine"`        // true=我发的
-	Type    int    `json:"type"`           // local_type
-	Date    string `json:"date,omitempty"` // "2024-03-15"，搜索结果中使用
+	Timestamp int64  `json:"timestamp,omitempty"` // Unix 秒，用于时间线分页/排序
+	Time      string `json:"time"`                // "14:23"
+	Content   string `json:"content"`             // 消息内容或类型描述
+	IsMine    bool   `json:"is_mine"`             // true=我发的
+	Type      int    `json:"type"`                // local_type
+	Date      string `json:"date,omitempty"`      // "2024-03-15"
 }
 
 type GlobalSearchHit struct {
@@ -894,8 +896,7 @@ func (s *ContactService) GetDayMessages(username, date string) []ChatMessage {
 	var msgs []ChatMessage
 	for _, mdb := range s.dbMgr.MessageDBs {
 		// 每个 DB 单独查联系人 rowid（不同 DB 里 rowid 不同）
-		var contactRowID int64 = -1
-		mdb.QueryRow(fmt.Sprintf("SELECT rowid FROM Name2Id WHERE user_name = %q", username)).Scan(&contactRowID)
+		contactRowID := lookupContactRowID(mdb, username)
 
 		rows, err := mdb.Query(fmt.Sprintf(
 			"SELECT create_time, local_type, message_content, COALESCE(WCDB_CT_message_content,0), COALESCE(real_sender_id,0) FROM [%s] WHERE create_time >= %d AND create_time < %d ORDER BY create_time ASC",
@@ -910,51 +911,99 @@ func (s *ContactService) GetDayMessages(username, date string) []ChatMessage {
 			var rawContent []byte
 			var ct, senderID int64
 			rows.Scan(&ts, &lt, &rawContent, &ct, &senderID)
-
-			content := decodeGroupContent(rawContent, ct)
-			content = strings.TrimSpace(content)
-
-			// 非文本类型给个描述
-			switch lt {
-			case 3:
-				content = "[图片]"
-			case 34:
-				content = "[语音]"
-			case 43:
-				content = "[视频]"
-			case 47:
-				content = "[表情]"
-			case 49:
-				if content == "" {
-					content = "[文件/链接]"
-				} else if strings.Contains(content, "wcpay") || strings.Contains(content, "redenvelope") {
-					content = "[红包/转账]"
-				} else {
-					content = "[链接/文件]"
-				}
-			default:
-				if lt != 1 {
-					content = fmt.Sprintf("[消息类型 %d]", lt)
-				}
-			}
-			if content == "" {
+			msg, ok := s.buildChatMessage(ts, lt, rawContent, ct, senderID, contactRowID)
+			if !ok {
 				continue
 			}
-
-			isMine := contactRowID < 0 || senderID != contactRowID
-			timeStr := time.Unix(ts, 0).In(s.tz).Format("15:04")
-			msgs = append(msgs, ChatMessage{
-				Time:    timeStr,
-				Content: content,
-				IsMine:  isMine,
-				Type:    lt,
-			})
+			msgs = append(msgs, msg)
 		}
 		rows.Close()
 	}
 
 	if msgs == nil {
 		return []ChatMessage{}
+	}
+	sort.Slice(msgs, func(i, j int) bool { return msgs[i].Timestamp < msgs[j].Timestamp })
+	return msgs
+}
+
+// GetMessageHistory 返回联系人历史聊天记录，用于详情页时间线。
+// before 为可选时间戳（Unix 秒），返回更早的消息；结果按时间倒序，便于前端继续加载更早消息。
+func (s *ContactService) GetMessageHistory(username string, before int64, limit int) []ChatMessage {
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 500 {
+		limit = 500
+	}
+
+	tableName := db.GetTableName(username)
+	baseWhere := s.timeWhere()
+	if baseWhere == "" {
+		baseWhere = " WHERE 1=1"
+	}
+	if before > 0 {
+		baseWhere += fmt.Sprintf(" AND create_time < %d", before)
+	}
+
+	type historyRow struct {
+		msg     ChatMessage
+		dbIndex int
+		rowID   int64
+	}
+
+	rowsBuf := make([]historyRow, 0, limit*len(s.dbMgr.MessageDBs))
+	for dbIndex, mdb := range s.dbMgr.MessageDBs {
+		contactRowID := lookupContactRowID(mdb, username)
+		sqlStr := fmt.Sprintf(
+			"SELECT rowid, create_time, local_type, message_content, COALESCE(WCDB_CT_message_content,0), COALESCE(real_sender_id,0) FROM [%s]%s ORDER BY create_time DESC, rowid DESC LIMIT %d",
+			tableName, baseWhere, limit+1,
+		)
+		rows, err := mdb.Query(sqlStr)
+		if err != nil {
+			continue
+		}
+		for rows.Next() {
+			var rowID, ts int64
+			var lt int
+			var rawContent []byte
+			var ct, senderID int64
+			rows.Scan(&rowID, &ts, &lt, &rawContent, &ct, &senderID)
+			msg, ok := s.buildChatMessage(ts, lt, rawContent, ct, senderID, contactRowID)
+			if !ok {
+				continue
+			}
+			rowsBuf = append(rowsBuf, historyRow{
+				msg:     msg,
+				dbIndex: dbIndex,
+				rowID:   rowID,
+			})
+		}
+		rows.Close()
+	}
+
+	if len(rowsBuf) == 0 {
+		return []ChatMessage{}
+	}
+
+	// 全量按时间倒序合并；同秒消息再用 rowid/dbIndex 做稳定排序，保证翻页顺序可重复。
+	sort.Slice(rowsBuf, func(i, j int) bool {
+		if rowsBuf[i].msg.Timestamp == rowsBuf[j].msg.Timestamp {
+			if rowsBuf[i].rowID == rowsBuf[j].rowID {
+				return rowsBuf[i].dbIndex > rowsBuf[j].dbIndex
+			}
+			return rowsBuf[i].rowID > rowsBuf[j].rowID
+		}
+		return rowsBuf[i].msg.Timestamp > rowsBuf[j].msg.Timestamp
+	})
+
+	if len(rowsBuf) > limit {
+		rowsBuf = rowsBuf[:limit]
+	}
+
+	msgs := make([]ChatMessage, 0, len(rowsBuf))
+	for _, row := range rowsBuf {
+		msgs = append(msgs, row.msg)
 	}
 	return msgs
 }
@@ -1035,8 +1084,7 @@ func (s *ContactService) SearchMessages(username, query string, includeMine bool
 
 	var msgs []ChatMessage
 	for _, mdb := range s.dbMgr.MessageDBs {
-		var contactRowID int64 = -1
-		mdb.QueryRow(fmt.Sprintf("SELECT rowid FROM Name2Id WHERE user_name = %q", username)).Scan(&contactRowID)
+		contactRowID := lookupContactRowID(mdb, username)
 
 		senderFilter := ""
 		if !includeMine && contactRowID >= 0 {
@@ -1078,11 +1126,12 @@ func (s *ContactService) SearchMessages(username, query string, includeMine bool
 			isMine := contactRowID < 0 || senderID != contactRowID
 			t := time.Unix(ts, 0).In(s.tz)
 			msgs = append(msgs, ChatMessage{
-				Time:    t.Format("15:04"),
-				Date:    t.Format("2006-01-02"),
-				Content: content,
-				IsMine:  isMine,
-				Type:    1,
+				Timestamp: ts,
+				Time:      t.Format("15:04"),
+				Date:      t.Format("2006-01-02"),
+				Content:   content,
+				IsMine:    isMine,
+				Type:      1,
 			})
 		}
 		rows.Close()
@@ -1097,6 +1146,55 @@ func (s *ContactService) SearchMessages(username, query string, includeMine bool
 		msgs = msgs[:200]
 	}
 	return msgs
+}
+
+func lookupContactRowID(mdb *sql.DB, username string) int64 {
+	var contactRowID int64 = -1
+	_ = mdb.QueryRow("SELECT rowid FROM Name2Id WHERE user_name = ?", username).Scan(&contactRowID)
+	return contactRowID
+}
+
+func (s *ContactService) buildChatMessage(ts int64, lt int, rawContent []byte, ct, senderID, contactRowID int64) (ChatMessage, bool) {
+	content := describePrivateMessageContent(lt, decodeGroupContent(rawContent, ct))
+	if content == "" {
+		return ChatMessage{}, false
+	}
+	t := time.Unix(ts, 0).In(s.tz)
+	return ChatMessage{
+		Timestamp: ts,
+		Time:      t.Format("15:04"),
+		Date:      t.Format("2006-01-02"),
+		Content:   content,
+		IsMine:    contactRowID < 0 || senderID != contactRowID,
+		Type:      lt,
+	}, true
+}
+
+func describePrivateMessageContent(localType int, rawText string) string {
+	content := strings.TrimSpace(rawText)
+	switch localType {
+	case 3:
+		return "[图片]"
+	case 34:
+		return "[语音]"
+	case 43:
+		return "[视频]"
+	case 47:
+		return "[表情]"
+	case 49:
+		if content == "" {
+			return "[文件/链接]"
+		}
+		if strings.Contains(content, "wcpay") || strings.Contains(content, "redenvelope") {
+			return "[红包/转账]"
+		}
+		return "[链接/文件]"
+	default:
+		if localType != 1 {
+			return fmt.Sprintf("[消息类型 %d]", localType)
+		}
+		return content
+	}
 }
 
 func (s *ContactService) SearchAllMessages(query string, includeMine bool, limit int) []GlobalSearchHit {

@@ -20,6 +20,8 @@ export interface ControversialLabel {
   label: string;
   score: number;
   confidence: number;
+  stale_hint?: string;
+  confidence_reason?: string;
   why: string;
   metrics?: ControversyMetric[];
   evidence_groups?: ControversyEvidence[];
@@ -89,7 +91,7 @@ export const ControversyPanel: React.FC<ControversyPanelProps> = ({
         </div>
         <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-rose-500">
           <Flame size={12} />
-          Controversial
+          娱乐锐评
         </span>
       </div>
 
@@ -141,32 +143,32 @@ export const ControversyPanel: React.FC<ControversyPanelProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-black text-rose-600">
-                  score {asPercent(active.score)}
+                  强度 {asPercent(active.score)}
                 </span>
                 <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700">
-                  confidence {asPercent(active.confidence)}
+                  可信度 {asPercent(active.confidence)}
                 </span>
               </div>
             </div>
 
             <div className="mb-4 rounded-xl border border-rose-100 bg-rose-50/60 p-3">
-              <p className="text-xs font-bold uppercase tracking-wider text-rose-500">Why</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-rose-500">判定原因</p>
               <p className="mt-1 text-sm font-semibold leading-6 text-[#1d1d1f]">{active.why}</p>
             </div>
 
-            {(normalizedAnalysisConfidence !== null || staleHint || confidenceReason) && (
+            {(normalizedAnalysisConfidence !== null || staleHint || confidenceReason || active.stale_hint || active.confidence_reason) && (
               <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-3">
                 <p className="text-xs font-bold uppercase tracking-wider text-amber-600">可信度提示</p>
                 {normalizedAnalysisConfidence !== null && (
                   <p className="mt-1 text-sm font-black text-amber-700">
-                    全局 confidence {normalizedAnalysisConfidence}%
+                    全局可信度 {normalizedAnalysisConfidence}%
                   </p>
                 )}
-                {staleHint && (
-                  <p className="mt-1 text-xs font-semibold leading-5 text-amber-800">{staleHint}</p>
+                {(active.stale_hint || staleHint) && (
+                  <p className="mt-1 text-xs font-semibold leading-5 text-amber-800">{active.stale_hint ?? staleHint}</p>
                 )}
-                {confidenceReason && (
-                  <p className="mt-1 text-xs leading-5 text-amber-700/90">{confidenceReason}</p>
+                {(active.confidence_reason || confidenceReason) && (
+                  <p className="mt-1 text-xs leading-5 text-amber-700/90">{active.confidence_reason ?? confidenceReason}</p>
                 )}
               </div>
             )}
@@ -190,7 +192,7 @@ export const ControversyPanel: React.FC<ControversyPanelProps> = ({
             )}
 
             <div>
-              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">Evidence</p>
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">证据消息</p>
               <div className="space-y-2">
                 {(active.evidence_groups ?? []).slice(0, 5).map((evidence, index) => (
                   <button

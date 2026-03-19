@@ -9,7 +9,7 @@ WeLink 把本地微信数据整理成一条完整链路：
 - 手机聊天记录迁移到电脑微信
 - 解密准备（默认对接 `wechat-decrypt`）
 - 数据目录校验与环境变量生成
-- 本地分析展示 + MCP 查询
+- 本地索引、分析展示 + MCP 查询
 
 当前正式支持平台：`macOS`、`Windows`。
 
@@ -117,10 +117,16 @@ WELINK_FRONTEND_PORT=3000
 
 ## MCP
 
-MCP 查询依赖两件事：
+如果你要把 WeLink 接给 AI，当成 MCP 数据源，前置顺序固定为：
 
-- 数据目录已准备完成
-- WeLink 后端已完成索引
+1. 先确认聊天记录已经完整导入到电脑微信
+2. 再完成解密，拿到标准数据库目录
+3. 启动 WeLink 并等待索引完成
+4. 最后再连接 MCP 客户端
+
+接入后，Claude Code 等 AI 客户端可以直接查询和分析本地聊天数据。
+
+注意：索引没完成前，MCP 查询结果也会不完整。
 
 详见 [mcp-server/README.md](mcp-server/README.md)。
 

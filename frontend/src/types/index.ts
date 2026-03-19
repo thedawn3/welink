@@ -154,7 +154,35 @@ export interface ChatMessage {
   is_mine: boolean;
   type: number;
   date?: string;    // "2024-03-15"，搜索结果中使用
+  timestamp?: number;
+  ts?: number;      // 兼容旧前端字段
 }
+
+export interface ContactHistoryQuery {
+  limit?: number;
+  before?: number;
+}
+
+export interface ContactHistoryMessage extends ChatMessage {
+  date: string;
+  id?: string;
+}
+
+export interface ContactHistoryPage {
+  messages: ContactHistoryMessage[];
+  has_more: boolean;
+}
+
+export type ContactHistoryRawResponse =
+  | ContactHistoryMessage[]
+  | {
+      messages?: ContactHistoryMessage[];
+      items?: ContactHistoryMessage[];
+      list?: ContactHistoryMessage[];
+      has_more?: boolean;
+      hasMore?: boolean;
+      total?: number;
+    };
 
 export interface GlobalSearchHit {
   username: string;
@@ -238,6 +266,8 @@ export interface ControversialLabel {
   label: string;
   score: number;
   confidence: number;
+  stale_hint?: string;
+  confidence_reason?: string;
   why: string;
   metrics?: ControversyMetric[];
   evidence_groups?: RelationEvidence[];
@@ -246,6 +276,9 @@ export interface ControversialLabel {
 export interface RelationProfileDetail {
   username: string;
   name: string;
+  confidence?: number;
+  stale_hint?: string;
+  confidence_reason?: string;
   stage_timeline: RelationStageItem[];
   objective_summary: string;
   playful_summary: string;
@@ -277,6 +310,9 @@ export interface ControversyOverview {
 export interface ControversyDetail {
   username: string;
   name: string;
+  confidence?: number;
+  stale_hint?: string;
+  confidence_reason?: string;
   controversial_labels: ControversialLabel[];
 }
 

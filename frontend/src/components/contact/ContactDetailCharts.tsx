@@ -14,6 +14,7 @@ interface Props {
   totalMessages: number;
   username: string;
   contactName: string;
+  onHeatmapDayClick?: (date: string, count: number) => void;
 }
 
 // 后端 weekly_dist[0]=周日, [1]=周一, ..., [6]=周六（Go time.Weekday）
@@ -23,7 +24,7 @@ const WEEK_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六',
 const HOUR_COLOR = '#10aeff';
 const WEEK_COLOR = '#07c160';
 
-export const ContactDetailCharts: React.FC<Props> = ({ detail, totalMessages, username, contactName }) => {
+export const ContactDetailCharts: React.FC<Props> = ({ detail, totalMessages, username, contactName, onHeatmapDayClick }) => {
   const [dayPanel, setDayPanel] = useState<{ date: string; count: number } | null>(null);
   const hourlyData = detail.hourly_dist.map((v, h) => ({
     label: `${h.toString().padStart(2, '0')}`,
@@ -122,10 +123,18 @@ export const ContactDetailCharts: React.FC<Props> = ({ detail, totalMessages, us
       {Object.keys(detail.daily_heatmap).length > 0 && (
         <div className="bg-[#f8f9fb] rounded-2xl p-4">
           <h4 className="text-sm font-black text-gray-600 uppercase mb-1 tracking-wider">聊天日历</h4>
-          <p className="text-xs text-gray-400 mb-3">每格代表一天，颜色越深表示当天消息越多，点击可查看具体数量</p>
+          <p className="text-xs text-gray-400 mb-3">
+            每格代表一天，颜色越深表示当天消息越多，点击可{onHeatmapDayClick ? '跳转聊天时间线' : '查看当日对话'}
+          </p>
           <CalendarHeatmap
             data={detail.daily_heatmap}
-            onDayClick={(date, count) => setDayPanel({ date, count })}
+            onDayClick={(date, count) => {
+              if (onHeatmapDayClick) {
+                onHeatmapDayClick(date, count);
+                return;
+              }
+              setDayPanel({ date, count });
+            }}
           />
           <div className="flex items-center gap-1 mt-2 text-xs text-gray-400">
             <span>少</span>

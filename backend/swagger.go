@@ -278,6 +278,50 @@ func swaggerSpec() []byte {
         }
       }
     },
+    "/contacts/messages/history": {
+      "get": {
+        "tags": ["联系人"],
+        "summary": "获取联系人历史聊天记录",
+        "description": "返回联系人聊天时间线分页数据，按时间倒序，便于前端继续加载更早消息。",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "联系人 wxid"
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" },
+            "description": "Unix 秒时间戳，仅返回更早的消息"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 200 },
+            "description": "分页大小，默认 200"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "聊天时间线分页结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ChatMessage" }
+                }
+              }
+            }
+          },
+          "400": { "description": "缺少 username 或分页参数错误" }
+        }
+      }
+    },
     "/groups": {
       "get": {
         "tags": ["群聊"],
@@ -416,6 +460,17 @@ func swaggerSpec() []byte {
           "money_count":       { "type": "integer" },
           "initiation_count":  { "type": "integer" },
           "total_sessions":    { "type": "integer" }
+        }
+      },
+      "ChatMessage": {
+        "type": "object",
+        "properties": {
+          "timestamp": { "type": "integer" },
+          "date": { "type": "string" },
+          "time": { "type": "string" },
+          "content": { "type": "string" },
+          "is_mine": { "type": "boolean" },
+          "type": { "type": "integer" }
         }
       },
       "GlobalStats": {

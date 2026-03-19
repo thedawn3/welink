@@ -62,7 +62,7 @@ type ContactActivityFilter = 'all' | 'hot' | 'warm' | 'cold';
 type ContactCategoryFilter = 'all' | 'normal' | 'deleted';
 type ContactSortKey = 'messages_desc' | 'last_message_desc' | 'shared_groups_desc' | 'name_asc';
 type DashboardRelationMode = 'objective' | 'controversy';
-type ContactModalView = 'wordcloud' | 'detail' | 'sentiment' | 'search' | 'analysis';
+type ContactModalView = 'timeline' | 'wordcloud' | 'detail' | 'sentiment' | 'search' | 'analysis';
 
 function getContactLastMessageTs(contact: ContactStats) {
   const ts = new Date(contact.last_message_time).getTime();
@@ -176,6 +176,20 @@ function App() {
     );
   }, [allContacts, blockedUsers]);
 
+  const blockedUsernames = useMemo(() => {
+    if (blockedUsers.length === 0) return new Set<string>();
+    const usernames = new Set<string>();
+    for (const contact of allContacts) {
+      if (blockedUsers.some((value) => value === contact.username || value === contact.nickname || value === contact.remark)) {
+        usernames.add(contact.username);
+      }
+    }
+    for (const value of blockedUsers) {
+      usernames.add(value);
+    }
+    return usernames;
+  }, [allContacts, blockedUsers]);
+
   // 屏蔽过滤后的全局统计（深夜排行中过滤被屏蔽联系人）
   const globalStats = useMemo(() => {
     if (!rawGlobalStats || blockedDisplayNames.size === 0) return rawGlobalStats;
@@ -186,6 +200,31 @@ function App() {
       ),
     };
   }, [rawGlobalStats, blockedDisplayNames]);
+
+  const visibleRelationOverview = useMemo(() => {
+    if (!relationOverview || blockedUsernames.size === 0) return relationOverview;
+    const filterItems = (items: RelationOverview['warming']) =>
+      items.filter((item) => !blockedUsernames.has(item.username));
+    return {
+      warming: filterItems(relationOverview.warming),
+      cooling: filterItems(relationOverview.cooling),
+      initiative: filterItems(relationOverview.initiative),
+      fast_reply: filterItems(relationOverview.fast_reply),
+    };
+  }, [relationOverview, blockedUsernames]);
+
+  const visibleControversyOverview = useMemo(() => {
+    if (!controversyOverview || blockedUsernames.size === 0) return controversyOverview;
+    const filterItems = (items: ControversyOverview['simp']) =>
+      items.filter((item) => !blockedUsernames.has(item.username));
+    return {
+      simp: filterItems(controversyOverview.simp),
+      ambiguity: filterItems(controversyOverview.ambiguity),
+      faded: filterItems(controversyOverview.faded),
+      tool_person: filterItems(controversyOverview.tool_person),
+      cold_violence: filterItems(controversyOverview.cold_violence),
+    };
+  }, [controversyOverview, blockedUsernames]);
 
   // Computed Values
   const filteredContacts = useMemo(() => {
@@ -482,7 +521,7 @@ function App() {
               </div>
               {dashboardRelationMode === 'objective' ? (
                 <RelationOverviewSection
-                  data={relationOverview ?? { warming: [], cooling: [], initiative: [], fast_reply: [] }}
+                  data={visibleRelationOverview ?? { warming: [], cooling: [], initiative: [], fast_reply: [] }}
                   loading={relationOverviewLoading}
                   onItemClick={(_listType: RelationOverviewListType, item) => {
                     handleOpenRelationContact(item.username, 'analysis');
@@ -490,7 +529,7 @@ function App() {
                 />
               ) : (
                 <ControversyOverviewSection
-                  data={controversyOverview}
+                  data={visibleControversyOverview}
                   loading={controversyOverviewLoading}
                   onItemClick={(item, _board: ControversyBoardKey) => {
                     handleOpenRelationContact(item.username, 'analysis', item.label);

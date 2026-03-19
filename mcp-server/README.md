@@ -1,15 +1,16 @@
 # WeLink MCP Server
 
-让 Claude Code（CLI）用自然语言直接查询你的微信聊天数据。
+让 Claude Code 等 AI 客户端把 WeLink 当作 MCP 数据源，直接查询和分析你的本地微信聊天数据。
 
 ## 前提条件
 
-在配置 MCP 之前，先完成以下步骤：
+在配置 MCP 之前，前置顺序固定为：
 
-1. 按平台文档准备好解密产物
-2. 运行 `welink-doctor` 校验目录并生成 `.env`
-3. 启动 WeLink：`docker compose up --build`
-4. 等待索引完成：`GET /api/status` 中 `is_initialized=true`
+1. 先确认聊天记录已经完整导入到电脑微信
+2. 再按平台文档完成解密，拿到标准数据库目录
+3. 运行 `welink-doctor` 校验目录并生成 `.env`
+4. 启动 WeLink，并等待索引完成：`GET /api/status` 中 `is_initialized=true`
+5. 最后再连接 MCP 客户端
 
 平台文档：
 
@@ -24,6 +25,8 @@ go build -o welink-mcp .
 ```
 
 ## 配置 Claude Code
+
+完成前置步骤后，再把 MCP 接到客户端：
 
 编辑 `~/.claude.json`：
 
@@ -47,6 +50,12 @@ claude mcp add welink /你的路径/welink/mcp-server/welink-mcp -e WELINK_URL=h
 ```
 
 如果你改了 `.env` 中的 `WELINK_BACKEND_PORT`，把上面的 `8080` 改成实际端口。
+
+## 接入后的作用
+
+- AI 可以直接查询联系人、消息统计、关系分析和关键词结果
+- AI 可以基于 WeLink 已完成的本地索引做总结、筛选和对比
+- 如果索引尚未完成，AI 看到的数据也会为空或不完整
 
 ## 确认加载
 

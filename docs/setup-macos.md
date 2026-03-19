@@ -63,6 +63,8 @@ curl http://localhost:8080/api/health
 curl http://localhost:8080/api/status
 ```
 
+若你后面要接 MCP / AI，先确认 `/api/status` 里的 `is_initialized` 已经变成 `true`；索引未完成前，AI 看到的数据也不完整。
+
 ## 常见情况
 
 - doctor 找不到 `msg` 目录：不影响核心聊天分析，只影响媒体回溯。
