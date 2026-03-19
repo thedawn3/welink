@@ -18,6 +18,14 @@
 | [indexing.md](./indexing.md) | 索引与初始化流程 |
 | [database.md](./database.md) | contact/message 数据库结构 |
 
+## AI 协作与变更说明
+
+| 文档 | 说明 |
+|---|---|
+| [AI_PROJECT_STARTER/README.md](./AI_PROJECT_STARTER/README.md) | AI 协作入口、阅读顺序、工具使用方式 |
+| [PROJECT_LOCAL_CONTEXT.md](./PROJECT_LOCAL_CONTEXT.md) | WeLink 项目特有规则、代码风格和联动约束 |
+| [changes/relationship-analysis-v2-and-mcp-onboarding.md](./changes/relationship-analysis-v2-and-mcp-onboarding.md) | 本轮关系分析 v2 / 聊天时间线 / MCP 首页说明变更交接 |
+
 ## 分析算法口径
 
 | 文档 | 说明 |

@@ -44,3 +44,27 @@ cd ../frontend && npm ci && npm run build
 - 关系分析口径
 - MCP 前置依赖
 - 跨平台脚本与排障流程
+
+## AI 接手入口
+
+WeLink 的 AI 协作入口固定分三层：
+
+- `AGENTS.md`：仓库级自动入口
+- `docs/AI_PROJECT_STARTER/`：通用 AI 协作规则与使用方式
+- `docs/PROJECT_LOCAL_CONTEXT.md`：WeLink 项目特有事实、代码风格和联动约束
+
+职责分层：
+
+- starter 文档只放跨项目可复用的协作原则
+- 项目特有规则统一放到 `docs/PROJECT_LOCAL_CONTEXT.md`
+- 产品和运行入口仍然以根 `README.md` 与 `docs/README.md` 为准
+
+## 哪类变更必须同步变更说明
+
+以下变化默认需要同步 `docs/changes/`：
+
+- 新增或调整用户可见入口
+- 新增后端 API、前端关键类型字段
+- 改动 MCP 接入前置顺序
+- 改动启动方式、路径契约、索引流程
+- 改动关系分析算法口径或用户可见文案语义

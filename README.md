@@ -21,6 +21,7 @@ WeLink 把本地微信数据整理成一条完整链路：
 - 开发者工作流：[docs/developer-workflow.md](docs/developer-workflow.md)
 - 关系分析算法口径：[docs/relation-analysis.md](docs/relation-analysis.md)
 - MCP 配置：[mcp-server/README.md](mcp-server/README.md)
+- AI 协作入口：[docs/AI_PROJECT_STARTER/README.md](docs/AI_PROJECT_STARTER/README.md)
 
 ## 核心能力
 
@@ -114,6 +115,15 @@ WELINK_FRONTEND_PORT=3000
 5. 先做 baseline 同步，再做功能增量提交
 
 详见 [docs/developer-workflow.md](docs/developer-workflow.md)。
+
+## AI 协作入口
+
+如果你让 Codex、Claude Code 等 AI 工具直接维护 WeLink，建议从这些入口开始：
+
+- 仓库级入口：`AGENTS.md`
+- AI 协作说明：`docs/AI_PROJECT_STARTER/README.md`
+- 项目本地上下文：`docs/PROJECT_LOCAL_CONTEXT.md`
+- 本轮改动交接：`docs/changes/relationship-analysis-v2-and-mcp-onboarding.md`
 
 ## MCP
 
