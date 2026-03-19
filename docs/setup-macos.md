@@ -52,8 +52,9 @@ docker compose up --build
 ./scripts/start-welink.sh
 ```
 
-- 前端：`http://localhost:3000`
-- 后端：`http://localhost:8080`
+- 默认前端：`http://localhost:3000`
+- 默认后端：`http://localhost:8080`
+- 若你改了 `.env` 中的端口，以 `.env` 为准
 
 ## 5. 校验
 

@@ -6,11 +6,13 @@ services:
     ports:
       - "${WELINK_BACKEND_PORT:-8080}:8080"
     volumes:
-      - ${WELINK_DATA_DIR:-../decrypted}:/app/data:ro
+      - ${WELINK_DATA_DIR:-./decrypted}:/app/data:ro
       - ${WELINK_MSG_DIR:-./.tmp/welink-empty-msg}:/app/msg:ro
       - ./config.yaml:/app/config.yaml:ro
     environment:
       - GIN_MODE=${WELINK_GIN_MODE:-release}
+      - WELINK_DATA_DIR=/app/data
+      - WELINK_MSG_DIR=/app/msg
       - DATA_DIR=/app/data
       - MSG_DIR=/app/msg
 

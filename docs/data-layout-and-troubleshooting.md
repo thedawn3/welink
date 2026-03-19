@@ -60,6 +60,8 @@ WELINK_FRONTEND_PORT=3000
 curl http://localhost:8080/api/status
 ```
 
+若你改了 `.env` 里的 `WELINK_BACKEND_PORT`，把这里的 `8080` 替换成实际端口。
+
 若还没初始化完成，先等待索引结束。
 
 ### 电脑微信里看不到完整历史

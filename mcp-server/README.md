@@ -46,6 +46,8 @@ go build -o welink-mcp .
 claude mcp add welink /你的路径/welink/mcp-server/welink-mcp -e WELINK_URL=http://localhost:8080
 ```
 
+如果你改了 `.env` 中的 `WELINK_BACKEND_PORT`，把上面的 `8080` 改成实际端口。
+
 ## 确认加载
 
 Claude Code 中执行：
@@ -72,6 +74,7 @@ Claude Code 中执行：
 **后端无法访问**
 - 先确认 `docker compose up --build` 正常运行
 - 再确认 `curl http://localhost:8080/api/health` 返回正常
+- 若你改了端口，则以 `.env` 中的 `WELINK_BACKEND_PORT` 为准
 
 **返回数据为空**
 - 通常是索引尚未完成，先检查 `/api/status`

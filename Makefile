@@ -29,8 +29,8 @@ build-mcp:       ## 编译 MCP Server 二进制
 
 ## ─── 本地开发 ─────────────────────────────────────────────────────────────────
 
-dev-backend:     ## 本地启动后端（读取 config.yaml 或默认值）
-	cd backend && go run .
+dev-backend:     ## 本地启动后端（优先读取仓库根目录 .env + config.yaml）
+	set -a; if [ -f .env ]; then . ./.env; fi; set +a; go run ./backend
 
 dev-frontend:    ## 本地启动前端 Vite dev server
 	cd frontend && npm run dev

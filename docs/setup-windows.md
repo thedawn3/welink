@@ -53,6 +53,8 @@ curl http://localhost:8080/api/health
 curl http://localhost:8080/api/status
 ```
 
+若你改了 `.env` 里的端口，请把上面的 `8080` 替换成实际 `WELINK_BACKEND_PORT`。
+
 ## Windows 注意事项
 
 - `.env` 里的路径建议统一写成正斜杠，例如 `C:/Users/...`。

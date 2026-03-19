@@ -204,11 +204,13 @@ func (s *ContactService) timeWhere() string {
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `DATA_DIR` | `../decrypted` | 解密后数据库根目录 |
-| `PORT` | `8080` | 后端监听端口 |
+| `WELINK_DATA_DIR` | `./decrypted` | 解密后数据库根目录 |
+| `WELINK_BACKEND_PORT` | `8080` | 后端监听端口 |
+| `DATA_DIR` | 兼容旧变量 | 旧环境变量名，仍可读取但不建议继续使用 |
+| `PORT` | 兼容旧变量 | 旧环境变量名，仍可读取但不建议继续使用 |
 
 Docker Compose 下通常设置：
 ```
-DATA_DIR=/data
-PORT=8080
+WELINK_DATA_DIR=/data
+WELINK_BACKEND_PORT=8080
 ```

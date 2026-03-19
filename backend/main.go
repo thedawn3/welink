@@ -33,13 +33,13 @@ import (
 )
 
 func main() {
-	// 1. 加载配置（config.yaml > 环境变量 > 默认值）
-	cfg := config.Load("")
+	// 1. 加载配置（默认值 < config.yaml < 环境变量）
+	cfg := config.Load(resolveConfigPath())
 	log.Printf("WeLink config: data_dir=%s msg_dir=%s port=%s timezone=%s workers=%d",
 		cfg.Data.Dir, cfg.Data.MsgDir, cfg.Server.Port, cfg.Analysis.Timezone, cfg.Analysis.WorkerCount)
 
-	// 2. 初始化数据库管理器（DEMO_MODE 时先生成示例数据）
-	if os.Getenv("DEMO_MODE") == "true" {
+	// 2. 初始化数据库管理器（WELINK_DEMO_MODE / DEMO_MODE 时先生成示例数据）
+	if isDemoMode() {
 		demoDir := cfg.Data.Dir
 		log.Printf("[DEMO] Demo mode enabled, generating sample databases in %s", demoDir)
 		if err := seed.Generate(demoDir); err != nil {
@@ -344,4 +344,20 @@ func main() {
 
 	log.Printf("WeLink Backend serving on :%s", cfg.Server.Port)
 	r.Run(":" + cfg.Server.Port)
+}
+
+func resolveConfigPath() string {
+	if path := os.Getenv("WELINK_CONFIG_PATH"); path != "" {
+		return path
+	}
+	for _, candidate := range []string{"config.yaml", "../config.yaml"} {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func isDemoMode() bool {
+	return os.Getenv("WELINK_DEMO_MODE") == "true" || os.Getenv("DEMO_MODE") == "true"
 }

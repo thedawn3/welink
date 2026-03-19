@@ -14,6 +14,7 @@ import (
 type DBManager struct {
 	ContactDB  *sql.DB
 	MessageDBs []*sql.DB
+	DataDir    string
 }
 
 type DBInfo struct {
@@ -25,7 +26,7 @@ type DBInfo struct {
 
 // TableInfo 表信息
 type TableInfo struct {
-	Name    string `json:"name"`
+	Name     string `json:"name"`
 	RowCount int64  `json:"row_count"`
 }
 
@@ -52,9 +53,9 @@ func (mgr *DBManager) getDBByName(dbName string) *sql.DB {
 		return mgr.ContactDB
 	}
 	// 在消息数据库列表中查找（通过路径匹配文件名）
-	dataDir := os.Getenv("DATA_DIR")
+	dataDir := mgr.dataDir()
 	if dataDir == "" {
-		dataDir = "../decrypted"
+		return nil
 	}
 	for _, mdb := range mgr.MessageDBs {
 		// 通过查询 PRAGMA database_list 获取文件路径
@@ -223,29 +224,39 @@ func (mgr *DBManager) GetTableData(dbName, tableName string, offset, limit int) 
 
 func (mgr *DBManager) GetDBInfos() []DBInfo {
 	var infos []DBInfo
-	
+	dataDir := mgr.dataDir()
+	if dataDir == "" {
+		return infos
+	}
+
 	// 联系人库
 	if mgr.ContactDB != nil {
-		path := filepath.Join(os.Getenv("DATA_DIR"), "contact/contact.db")
-		fi, _ := os.Stat(path)
+		path := filepath.Join(dataDir, "contact/contact.db")
+		var size int64
+		if fi, err := os.Stat(path); err == nil {
+			size = fi.Size()
+		}
 		infos = append(infos, DBInfo{
 			Name: "contact.db",
 			Path: path,
-			Size: fi.Size(),
+			Size: size,
 			Type: "contact",
 		})
 	}
 
 	// 消息库
-	msgDir := filepath.Join(os.Getenv("DATA_DIR"), "message")
+	msgDir := filepath.Join(dataDir, "message")
 	files, _ := os.ReadDir(msgDir)
 	for _, f := range files {
 		if strings.HasSuffix(f.Name(), ".db") {
-			fi, _ := f.Info()
+			var size int64
+			if fi, err := f.Info(); err == nil {
+				size = fi.Size()
+			}
 			infos = append(infos, DBInfo{
 				Name: f.Name(),
 				Path: filepath.Join(msgDir, f.Name()),
-				Size: fi.Size(),
+				Size: size,
 				Type: "message",
 			})
 		}
@@ -253,8 +264,12 @@ func (mgr *DBManager) GetDBInfos() []DBInfo {
 	return infos
 }
 
+func (mgr *DBManager) dataDir() string {
+	return mgr.DataDir
+}
+
 func NewDBManager(dataDir string) (*DBManager, error) {
-	mgr := &DBManager{}
+	mgr := &DBManager{DataDir: dataDir}
 	log.Printf("Initializing DBManager with DATA_DIR: %s", dataDir)
 
 	// 1. 加载联系人数据库
@@ -283,7 +298,7 @@ func NewDBManager(dataDir string) (*DBManager, error) {
 
 	for _, file := range files {
 		if strings.HasPrefix(file.Name(), "message_") && strings.HasSuffix(file.Name(), ".db") &&
-		   !strings.Contains(file.Name(), "fts") && !strings.Contains(file.Name(), "resource") {
+			!strings.Contains(file.Name(), "fts") && !strings.Contains(file.Name(), "resource") {
 
 			dbPath := filepath.Join(msgDir, file.Name())
 			mdb, err := sql.Open("sqlite", dbPath)

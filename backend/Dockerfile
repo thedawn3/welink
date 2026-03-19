@@ -12,5 +12,6 @@ WORKDIR /app
 COPY --from=builder /app/welink-backend .
 EXPOSE 8080
 ENV GIN_MODE=release
+ENV WELINK_DATA_DIR=/app/data
 ENV DATA_DIR=/app/data
 CMD ["./welink-backend"]

@@ -8,7 +8,7 @@ server:
 data:
   # 解密后的微信数据根目录。
   # 本地开发建议使用相对路径；Docker 场景会由 compose 覆盖为 /app/data。
-  dir: "../decrypted"
+  dir: "./decrypted"
 
   # 微信媒体资源目录（图片/视频/文件等），可留空。
   # Docker 场景会由 compose 覆盖为 /app/msg。

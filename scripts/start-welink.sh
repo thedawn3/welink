@@ -25,10 +25,27 @@ if [ -n "${MSG_DIR}" ]; then
   args+=(--msg-dir "${MSG_DIR}")
 fi
 
+read_env_value() {
+  local key="$1"
+  local fallback="$2"
+  local env_file="${REPO_ROOT}/.env"
+  if [ -f "${env_file}" ]; then
+    local line
+    line="$(grep -E "^${key}=" "${env_file}" | tail -n 1 || true)"
+    if [ -n "${line}" ]; then
+      echo "${line#*=}"
+      return
+    fi
+  fi
+  echo "${fallback}"
+}
+
 "${SCRIPT_DIR}/welink-doctor.sh" "${args[@]}" --write-env
 
 cd "${REPO_ROOT}"
 docker compose up -d --build
+frontend_port="$(read_env_value WELINK_FRONTEND_PORT 3000)"
+backend_port="$(read_env_value WELINK_BACKEND_PORT 8080)"
 echo "WeLink started."
-echo "Frontend: http://localhost:3000"
-echo "Backend : http://localhost:8080"
+echo "Local frontend: http://localhost:${frontend_port}"
+echo "Local backend : http://localhost:${backend_port}"

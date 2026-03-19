@@ -8,7 +8,7 @@ import (
 )
 
 // Config 是 WeLink 的完整配置结构体。
-// 配置优先级：config.yaml > 环境变量 > 默认值。
+// 配置优先级：默认值 < config.yaml < 环境变量。
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Data     DataConfig     `yaml:"data"`
@@ -16,13 +16,14 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	// Port HTTP 监听端口，默认 8080。也可通过环境变量 PORT 覆盖。
+	// Port HTTP 监听端口，默认 8080。
+	// 优先读取 WELINK_BACKEND_PORT，PORT 仅做向后兼容。
 	Port string `yaml:"port"`
 }
 
 type DataConfig struct {
-	// Dir 解密后的微信数据目录，默认 ../decrypted（本地开发）或 /app/data（Docker）。
-	// 也可通过环境变量 DATA_DIR 覆盖。
+	// Dir 解密后的微信数据目录，默认 ./decrypted（本地开发）或 /app/data（Docker）。
+	// 优先读取 WELINK_DATA_DIR，DATA_DIR 仅做向后兼容。
 	Dir string `yaml:"dir"`
 
 	// MsgDir 微信媒体资源目录，包含图片/视频/文件等大体积资源。
@@ -68,7 +69,7 @@ func defaults() Config {
 			Port: "8080",
 		},
 		Data: DataConfig{
-			Dir:    "../decrypted",
+			Dir:    "./decrypted",
 			MsgDir: "",
 		},
 		Analysis: AnalysisConfig{
@@ -88,7 +89,7 @@ func defaults() Config {
 // Load 加载配置，按以下优先级合并：
 //  1. 默认值
 //  2. config.yaml（若存在）
-//  3. 环境变量 DATA_DIR / PORT（向后兼容）
+//  3. 环境变量 WELINK_*（旧 DATA_DIR / MSG_DIR / PORT 仅向后兼容）
 func Load(configPath string) *Config {
 	cfg := defaults()
 
@@ -107,15 +108,24 @@ func Load(configPath string) *Config {
 	}
 
 	// 环境变量覆盖（向后兼容旧用法）
-	if v := os.Getenv("DATA_DIR"); v != "" {
+	if v := firstNonEmptyEnv("WELINK_DATA_DIR", "DATA_DIR"); v != "" {
 		cfg.Data.Dir = v
 	}
-	if v := os.Getenv("MSG_DIR"); v != "" {
+	if v := firstNonEmptyEnv("WELINK_MSG_DIR", "MSG_DIR"); v != "" {
 		cfg.Data.MsgDir = v
 	}
-	if v := os.Getenv("PORT"); v != "" {
+	if v := firstNonEmptyEnv("WELINK_BACKEND_PORT", "PORT"); v != "" {
 		cfg.Server.Port = v
 	}
 
 	return &cfg
+}
+
+func firstNonEmptyEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			return value
+		}
+	}
+	return ""
 }

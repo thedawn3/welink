@@ -3,7 +3,7 @@
  */
 
 import React, { useState } from 'react';
-import { ChevronRight, Loader2, Apple, Monitor, Terminal, Database, ExternalLink, Github, Calendar } from 'lucide-react';
+import { ChevronRight, Loader2, Apple, Monitor, Terminal, Database, ExternalLink, Github, Calendar, FileText } from 'lucide-react';
 
 interface TimeOption {
   label: string;
@@ -31,6 +31,8 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
   const today = new Date().toISOString().slice(0, 10);
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState(today);
+  const repoUrl = 'https://github.com/runzhliu/welink';
+  const docsBaseUrl = `${repoUrl}/tree/main/docs`;
 
   const handleStart = () => {
     const opt = OPTIONS[selected];
@@ -60,22 +62,53 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
           <h1 className="text-4xl font-black text-[#1d1d1f] tracking-tight">WeLink</h1>
           <p className="text-gray-400 mt-2 text-sm font-medium">微信聊天数据分析平台</p>
           <a
-            href="https://github.com/runzhliu/WeLink"
+            href={repoUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 rounded-full bg-[#1d1d1f] text-white text-xs font-semibold hover:bg-[#333] transition-colors"
           >
             <Github size={13} />
-            runzhliu/WeLink
+            runzhliu/welink
           </a>
         </div>
 
         {/* Platform Notice */}
-        <div className="bg-[#1d1d1f] text-white rounded-2xl p-4 mb-3 flex items-start gap-3">
-          <Apple size={18} className="text-gray-300 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-bold">目前仅支持 macOS</p>
-            <p className="text-xs text-gray-400 mt-0.5">Windows、Linux 等其他平台支持敬请期待</p>
+        <div className="bg-[#1d1d1f] text-white rounded-2xl p-4 mb-3">
+          <div className="flex items-start gap-3">
+            <Monitor size={18} className="text-gray-300 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold">当前支持 macOS / Windows</p>
+              <p className="text-xs text-gray-400 mt-0.5">前端不再只按 macOS 设计，导入/解密准备改为跨平台文档 + 脚本链路。</p>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a
+              href={`${docsBaseUrl}/setup-macos.md`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
+            >
+              <Apple size={12} />
+              macOS 指南
+            </a>
+            <a
+              href={`${docsBaseUrl}/setup-windows.md`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
+            >
+              <Monitor size={12} />
+              Windows 指南
+            </a>
+            <a
+              href={`${docsBaseUrl}/data-layout-and-troubleshooting.md`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
+            >
+              <FileText size={12} />
+              数据排障
+            </a>
           </div>
         </div>
 
@@ -99,8 +132,8 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
             <div className="flex gap-3">
               <div className="w-6 h-6 rounded-full bg-[#07c16015] text-[#07c160] text-xs font-black flex items-center justify-center flex-shrink-0 mt-0.5">1</div>
               <div>
-                <p className="text-sm font-bold text-[#1d1d1f]">将手机聊天记录同步到 Mac（推荐）</p>
-                <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">打开手机微信 → 「我」→「设置」→「通用」→「聊天记录迁移与备份」→「迁移」，将记录迁移到电脑端，可获得更完整的历史数据</p>
+                <p className="text-sm font-bold text-[#1d1d1f]">先把手机聊天记录同步到电脑微信</p>
+                <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">打开手机微信 → 「我」→「设置」→「通用」→「聊天记录迁移与备份」→「迁移到电脑」，先保证电脑微信里就能看到完整历史。</p>
               </div>
             </div>
 
@@ -108,8 +141,8 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
             <div className="flex gap-3">
               <div className="w-6 h-6 rounded-full bg-[#07c16015] text-[#07c160] text-xs font-black flex items-center justify-center flex-shrink-0 mt-0.5">2</div>
               <div>
-                <p className="text-sm font-bold text-[#1d1d1f]">确保微信在 Mac 上保持运行</p>
-                <p className="text-xs text-gray-400 mt-0.5">解密工具需要从运行中的微信进程内存读取密钥</p>
+                <p className="text-sm font-bold text-[#1d1d1f]">按当前平台准备解密环境</p>
+                <p className="text-xs text-gray-400 mt-0.5">默认对接 `wechat-decrypt`；macOS / Windows 请按各自文档准备环境与输出目录。</p>
               </div>
             </div>
 
@@ -117,7 +150,7 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
             <div className="flex gap-3">
               <div className="w-6 h-6 rounded-full bg-[#07c16015] text-[#07c160] text-xs font-black flex items-center justify-center flex-shrink-0 mt-0.5">3</div>
               <div>
-                <p className="text-sm font-bold text-[#1d1d1f]">克隆并运行解密工具</p>
+                <p className="text-sm font-bold text-[#1d1d1f]">运行解密工具并拿到标准目录</p>
                 <a
                   href="https://github.com/ylytdeng/wechat-decrypt"
                   target="_blank"
@@ -129,9 +162,9 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
                 </a>
                 <div className="mt-2 bg-[#f8f9fb] rounded-xl px-3 py-2 flex items-center gap-2">
                   <Terminal size={12} className="text-gray-400 flex-shrink-0" />
-                  <code className="text-xs text-gray-600 font-mono">sudo python3 main.py</code>
+                  <code className="text-xs text-gray-600 font-mono">python main.py</code>
                 </div>
-                <p className="text-xs text-gray-400 mt-1.5">选择 <span className="font-mono bg-gray-100 px-1 rounded">decrypt</span> 模式，工具会自动提取密钥并解密所有数据库</p>
+                <p className="text-xs text-gray-400 mt-1.5">命令以平台文档为准，目标是拿到 `contact/contact.db` 与 `message/message_*.db`；WeLink 只消费这个标准目录，不内嵌第三方解密核心。</p>
               </div>
             </div>
 
@@ -139,15 +172,16 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
             <div className="flex gap-3">
               <div className="w-6 h-6 rounded-full bg-[#07c16015] text-[#07c160] text-xs font-black flex items-center justify-center flex-shrink-0 mt-0.5">4</div>
               <div>
-                <p className="text-sm font-bold text-[#1d1d1f]">将解密后的数据库放入指定目录</p>
+                <p className="text-sm font-bold text-[#1d1d1f]">校验目录并生成 `.env`</p>
                 <div className="mt-2 bg-[#f8f9fb] rounded-xl px-3 py-2 flex items-start gap-2">
                   <Database size={12} className="text-gray-400 flex-shrink-0 mt-0.5" />
                   <code className="text-xs text-gray-600 font-mono leading-relaxed">
-                    decrypted/<br />
-                    ├── contact/contact.db<br />
-                    └── message/message_*.db
+                    ./scripts/welink-doctor.sh --write-env<br />
+                    # 或 PowerShell<br />
+                    .\scripts\welink-doctor.ps1 -WriteEnv
                   </code>
                 </div>
+                <p className="text-xs text-gray-400 mt-1.5">doctor 会检查数据库目录、尝试发现媒体目录，并生成当前机器可用的 `.env`。</p>
               </div>
             </div>
 
@@ -158,9 +192,9 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
                 <p className="text-sm font-bold text-[#1d1d1f]">启动 WeLink</p>
                 <div className="mt-2 bg-[#f8f9fb] rounded-xl px-3 py-2 flex items-center gap-2">
                   <Terminal size={12} className="text-gray-400 flex-shrink-0" />
-                  <code className="text-xs text-gray-600 font-mono">docker compose up</code>
+                  <code className="text-xs text-gray-600 font-mono">./scripts/start-welink.sh</code>
                 </div>
-                <p className="text-xs text-gray-400 mt-1.5">访问 <span className="font-mono">localhost:3000</span> 即可开始分析</p>
+                <p className="text-xs text-gray-400 mt-1.5">macOS 可直接用脚本；Windows 用 <span className="font-mono">.\scripts\start-welink.ps1</span>。若你自定义了端口，以 `.env` 为准。</p>
               </div>
             </div>
           </div>

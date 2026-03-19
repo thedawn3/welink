@@ -55,7 +55,7 @@ decrypted/
 
 ### 3. 生成 `.env`
 
-macOS / Linux:
+macOS:
 
 ```bash
 ./scripts/welink-doctor.sh --write-env
@@ -75,11 +75,12 @@ docker compose up --build
 
 也可以直接用一键脚本：
 
-- macOS / Linux：`./scripts/start-welink.sh`
+- macOS：`./scripts/start-welink.sh`
 - PowerShell：`.\scripts\start-welink.ps1`
 
-- 前端：`http://localhost:3000`
-- 后端：`http://localhost:8080`
+- 默认前端：`http://localhost:3000`
+- 默认后端：`http://localhost:8080`
+- 若你在 `.env` 里改了 `WELINK_FRONTEND_PORT` / `WELINK_BACKEND_PORT`，以 `.env` 为准
 
 ### 5. 校验
 
@@ -87,6 +88,8 @@ docker compose up --build
 curl http://localhost:8080/api/health
 curl http://localhost:8080/api/status
 ```
+
+如果你改了 `.env` 中的 `WELINK_BACKEND_PORT`，把这里的 `8080` 换成实际端口即可。
 
 ## 环境变量
 
