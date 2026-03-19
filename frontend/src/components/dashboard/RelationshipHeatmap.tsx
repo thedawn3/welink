@@ -50,9 +50,11 @@ export const RelationshipHeatmap: React.FC<RelationshipHeatmapProps> = ({
   const overflow = hotContacts.length - shown.length;
 
   const categories = [
-    { label: '活跃', value: health.hot, color: 'bg-[#07c160]', textColor: 'text-[#07c160]', description: '最近 7 天有消息' },
-    { label: '温热', value: health.warm, color: 'bg-[#ff9500]', textColor: 'text-[#ff9500]', description: '超过 7 天未联系' },
-    { label: '冷淡', value: health.cold, color: 'bg-gray-300', textColor: 'text-gray-500', description: '零消息记录' },
+    { label: '活跃', value: health.hot,     color: 'bg-[#07c160]', textColor: 'text-[#07c160]', description: '7 天内有消息',    showAvatars: true },
+    { label: '温热', value: health.warm,    color: 'bg-[#9be94a]', textColor: 'text-[#7bc934]', description: '7–30 天未联系',   showAvatars: false },
+    { label: '渐冷', value: health.cooling, color: 'bg-[#ff9500]', textColor: 'text-[#ff9500]', description: '30–180 天未联系', showAvatars: false },
+    { label: '沉寂', value: health.silent,  color: 'bg-[#576b95]', textColor: 'text-[#576b95]', description: '超过 180 天',     showAvatars: false },
+    { label: '零消息', value: health.cold,  color: 'bg-gray-300',  textColor: 'text-gray-400',  description: '从未聊天',        showAvatars: false },
   ];
 
   return (
@@ -70,7 +72,7 @@ export const RelationshipHeatmap: React.FC<RelationshipHeatmapProps> = ({
               </div>
               <div className="flex items-center gap-3">
                 {/* 活跃好友头像堆叠 */}
-                {category.label === '活跃' && shown.length > 0 && (
+                {category.showAvatars && shown.length > 0 && (
                   <div className="flex items-center">
                     {shown.map((c) => (
                       <Avatar key={c.username} contact={c} onClick={() => onContactClick?.(c)} />

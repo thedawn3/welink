@@ -136,25 +136,25 @@ function App() {
   }, [contacts]);
 
   const healthStatus: HealthStatus = useMemo(() => {
-    if (!contacts.length) return { hot: 0, warm: 0, cold: 0 };
+    if (!contacts.length) return { hot: 0, warm: 0, cooling: 0, silent: 0, cold: 0 };
 
     const now = Date.now() / 1000;
-    let hot = 0,
-      warm = 0,
-      cold = 0;
+    let hot = 0, warm = 0, cooling = 0, silent = 0, cold = 0;
 
     contacts.forEach((c) => {
-      const ts = new Date(c.last_message_time).getTime() / 1000;
       if (c.total_messages === 0) {
         cold++;
-      } else if (now - ts < 7 * 86400) {
-        hot++;
       } else {
-        warm++;
+        const ts = new Date(c.last_message_time).getTime() / 1000;
+        const days = (now - ts) / 86400;
+        if (days < 7) hot++;
+        else if (days < 30) warm++;
+        else if (days < 180) cooling++;
+        else silent++;
       }
     });
 
-    return { hot, warm, cold };
+    return { hot, warm, cooling, silent, cold };
   }, [contacts]);
 
   // Handlers

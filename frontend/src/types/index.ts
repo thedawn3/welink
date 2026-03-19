@@ -120,9 +120,11 @@ export interface GroupDetail {
 }
 
 export interface HealthStatus {
-  hot: number;   // 最近 7 天有消息
-  warm: number;  // 有消息但超过 7 天
-  cold: number;  // 零消息
+  hot: number;     // 最近 7 天有消息
+  warm: number;    // 7–30 天
+  cooling: number; // 30–180 天
+  silent: number;  // 180 天以上有消息
+  cold: number;    // 零消息
 }
 
 export interface FilteredStats {
