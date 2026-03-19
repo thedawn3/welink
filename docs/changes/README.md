@@ -21,6 +21,65 @@
   - 当前已知状态
   - 后续维护提醒
 
+## 命名规范
+
+- 文件名统一使用小写英文加连字符：`feature-a-and-b.md`
+- 名称优先反映“本轮最重要的用户可见变化 + 关键技术主题”
+- 不用日期当前缀，避免同一轮多次修订时不断改名
+- 不用 `misc`、`update`、`final` 这类信息量过低的名字
+
+推荐模式：
+
+- `major-feature-and-key-integration.md`
+- `area-refactor-and-api-update.md`
+- `platform-setup-and-mcp-onboarding.md`
+
+结合 WeLink 当前场景，推荐类似：
+
+- `relationship-analysis-v2-and-mcp-onboarding.md`
+- `timeline-and-global-search-improvements.md`
+- `windows-setup-and-data-doctoring.md`
+
+## 建议模板
+
+新建变更说明时，优先按下面结构写：
+
+```md
+# 标题
+
+## 变更摘要
+
+- 分支：
+- 关键提交：
+- 目标：
+
+## 用户可见变化
+
+- 无
+
+## 接口与类型变化
+
+- 无
+
+## 文档同步变化
+
+- 无
+
+## 验证结果
+
+- 无
+
+## 当前已知状态
+
+- 无
+
+## 后续维护提醒
+
+- 无
+```
+
+如果本轮没有接口变化或没有用户可见变化，可以保留标题但明确写“无”。
+
 ## 当前条目
 
 | 文档 | 说明 |
