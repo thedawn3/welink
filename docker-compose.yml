@@ -4,13 +4,14 @@ services:
     build: ./backend
     container_name: welink-backend
     ports:
-      - "8080:8080"
+      - "${WELINK_BACKEND_PORT:-8080}:8080"
     volumes:
-      - ../wechat-decrypt/decrypted_with_wal:/app/data
-      - /Users/thedawn/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_cd9h7an356ri31_7ca5/msg:/app/msg:ro
+      - ${WELINK_DATA_DIR:-../decrypted}:/app/data:ro
+      - ${WELINK_MSG_DIR:-./.tmp/welink-empty-msg}:/app/msg:ro
       - ./config.yaml:/app/config.yaml:ro
     environment:
-      - GIN_MODE=release
+      - GIN_MODE=${WELINK_GIN_MODE:-release}
+      - DATA_DIR=/app/data
       - MSG_DIR=/app/msg
 
   frontend:
@@ -18,8 +19,8 @@ services:
     build: ./frontend
     container_name: welink-frontend
     ports:
-      - "3000:80"
+      - "${WELINK_FRONTEND_PORT:-3000}:80"
     volumes:
-      - /Users/thedawn/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_cd9h7an356ri31_7ca5/msg:/usr/share/nginx/html/wechat-msg:ro
+      - ${WELINK_MSG_DIR:-./.tmp/welink-empty-msg}:/usr/share/nginx/html/wechat-msg:ro
     depends_on:
       - backend

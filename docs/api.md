@@ -8,6 +8,7 @@
 
 - [初始化与状态](#初始化与状态)
 - [联系人分析](#联系人分析)
+- [关系分析](#关系分析)
 - [群聊分析](#群聊分析)
 - [数据库浏览器](#数据库浏览器)
 - [其他](#其他)
@@ -268,7 +269,72 @@
 ]
 ```
 
-> 返回空数组表示无共同群聊，而非错误。
+### `GET /api/search/messages`
+
+全量关键词搜索，返回跨联系人/群聊的命中消息。
+
+**Query 参数**
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `q` | 是 | 搜索关键词 |
+| `include_mine` | 否 | 值为 `"true"` 时包含我发送的消息 |
+| `limit` | 否 | 最大返回条数，默认 200 |
+
+## 关系分析
+
+### `GET /api/relations/overview`
+
+首页客观模式榜单，包含：
+
+- `warming`
+- `cooling`
+- `initiative`
+- `fast_reply`
+
+每个 item 都包含以下核心字段：
+
+| 字段 | 说明 |
+|------|------|
+| `score` | 关系信号强度 |
+| `confidence` | 当前结论可信度 |
+| `stale_hint` | 久未联系时的降置信提示 |
+| `confidence_reason` | 低样本 / 久未联系等解释文案 |
+
+### `GET /api/relations/detail?username=...`
+
+联系人关系档案详情，返回：
+
+- `objective_summary`
+- `playful_summary`
+- `metrics`
+- `stage_timeline`
+- `evidence_groups`
+- `confidence`
+- `stale_hint`
+- `confidence_reason`
+
+### `GET /api/controversy/overview`
+
+首页争议模式榜单，包含：
+
+- `simp`
+- `ambiguity`
+- `faded`
+- `tool_person`
+- `cold_violence`
+
+每个 item 同样返回 `score`、`confidence`、`stale_hint`、`confidence_reason`，用于前端区分“当前高置信判断”和“历史回看”。
+
+### `GET /api/controversy/detail?username=...`
+
+联系人争议模式详情，返回争议标签列表。每个 label 除 `score` / `confidence` 外，还会返回：
+
+- `why`
+- `metrics`
+- `evidence_groups`
+- `stale_hint`
+- `confidence_reason`
 
 
 ### `GET /api/contacts/messages`

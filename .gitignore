@@ -44,5 +44,6 @@ CLAUDE.md
 .env
 .env.local
 .env.*.local
+.tmp/
 pr/
 REFACTORING.md
