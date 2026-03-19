@@ -51,6 +51,8 @@ export interface ContactDetail {
   hourly_dist: number[];      // [24]
   weekly_dist: number[];      // [7]
   daily_heatmap: Record<string, number>;
+  their_monthly_trend: Record<string, number>;
+  my_monthly_trend: Record<string, number>;
   late_night_count: number;
   money_count: number;
   initiation_count: number;

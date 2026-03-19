@@ -60,13 +60,15 @@ type WordCount struct {
 
 // ContactDetail 用于单个联系人的深度分析（按需查询，不在启动时计算）
 type ContactDetail struct {
-	HourlyDist     [24]int        `json:"hourly_dist"`
-	WeeklyDist     [7]int         `json:"weekly_dist"`
-	DailyHeatmap   map[string]int `json:"daily_heatmap"` // "2023-01-15" -> count
-	LateNightCount int64          `json:"late_night_count"`
-	MoneyCount     int64          `json:"money_count"`
-	InitiationCnt  int64          `json:"initiation_count"`  // 主动发起对话次数（间隔>6h）
-	TotalSessions  int64          `json:"total_sessions"`
+	HourlyDist        [24]int        `json:"hourly_dist"`
+	WeeklyDist        [7]int         `json:"weekly_dist"`
+	DailyHeatmap      map[string]int `json:"daily_heatmap"` // "2023-01-15" -> count
+	TheirMonthlyTrend map[string]int `json:"their_monthly_trend"` // "2024-01" -> count（对方）
+	MyMonthlyTrend    map[string]int `json:"my_monthly_trend"`    // "2024-01" -> count（我）
+	LateNightCount    int64          `json:"late_night_count"`
+	MoneyCount        int64          `json:"money_count"`
+	InitiationCnt     int64          `json:"initiation_count"`  // 主动发起对话次数（间隔>6h）
+	TotalSessions     int64          `json:"total_sessions"`
 }
 
 type ContactStatsExtended struct {
@@ -570,7 +572,9 @@ func (s *ContactService) AnalyzeWithFilter(from, to int64) *FilteredStats {
 func (s *ContactService) GetContactDetail(username string) *ContactDetail {
 	tableName := db.GetTableName(username)
 	detail := &ContactDetail{
-		DailyHeatmap: make(map[string]int),
+		DailyHeatmap:      make(map[string]int),
+		TheirMonthlyTrend: make(map[string]int),
+		MyMonthlyTrend:    make(map[string]int),
 	}
 
 	var prevTs int64
@@ -592,9 +596,17 @@ func (s *ContactService) GetContactDetail(username string) *ContactDetail {
 			h := dt.Hour()
 			w := int(dt.Weekday()) // 0=Sunday
 
+			isMineMsg := contactRowID < 0 || senderID != contactRowID
+			month := dt.Format("2006-01")
+
 			detail.HourlyDist[h]++
 			detail.WeeklyDist[w]++
 			detail.DailyHeatmap[dt.Format("2006-01-02")]++
+			if isMineMsg {
+				detail.MyMonthlyTrend[month]++
+			} else {
+				detail.TheirMonthlyTrend[month]++
+			}
 
 			if h >= s.cfg.LateNightStartHour && h < s.cfg.LateNightEndHour { detail.LateNightCount++ }
 
@@ -606,9 +618,7 @@ func (s *ContactService) GetContactDetail(username string) *ContactDetail {
 			// 新对话段：与上条消息间隔 > session_gap_seconds
 			if prevTs == 0 || ts-prevTs > s.cfg.SessionGapSeconds {
 				detail.TotalSessions++
-				// 主动发起：该段第一条消息是我发的（senderID != 对方 rowid）
-				isMine := contactRowID < 0 || senderID != contactRowID
-				if isMine {
+				if isMineMsg {
 					detail.InitiationCnt++
 				}
 			}
