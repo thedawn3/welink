@@ -19,6 +19,7 @@ WeLink 把本地微信数据库整理成一条稳定链路：
 - Docker 主文档：[`docs/deploy-docker.md`](docs/deploy-docker.md)
 - macOS 平台说明：[`docs/setup-macos.md`](docs/setup-macos.md)
 - Windows 平台说明：[`docs/setup-windows.md`](docs/setup-windows.md)
+- AI 端到端部署提示词：[`docs/ai-end-to-end-deploy-prompt.md`](docs/ai-end-to-end-deploy-prompt.md)
 - 数据目录与图片排障：[`docs/data-layout-and-troubleshooting.md`](docs/data-layout-and-troubleshooting.md)
 - MCP 接入：[`mcp-server/README.md`](mcp-server/README.md)
 - 文档索引：[`docs/README.md`](docs/README.md)
@@ -27,10 +28,18 @@ WeLink 把本地微信数据库整理成一条稳定链路：
 
 如果你要让另一台 `macOS` 或 `Windows` 电脑上的 AI 直接拉仓并一键部署，先只记住这几件事：
 
-1. Docker 只有两种正式模式：`analysis-only` 和 `manual-sync`
-2. `manual-sync` 的 `source` 必须是标准目录，不能直接指向原始 `xwechat_files` 根目录
-3. `msg` 和 `wechat-decrypt` 都是可选增强项，不是启动必需项
-4. Windows 额外需要：`PowerShell 脚本放行 + Python 3 在 PATH 中`
+1. 先确认电脑微信里已经有完整聊天记录
+2. 如果你手里还没有标准目录，先用 `ylytdeng/wechat-decrypt` 在容器外解密
+3. Docker 只有两种正式模式：`analysis-only` 和 `manual-sync`
+4. `manual-sync` 的 `source` 必须是标准目录，不能直接指向原始 `xwechat_files` 根目录
+5. `msg` 和 `wechat-decrypt` 都是可选增强项，不是 WeLink 启动必需项
+6. Windows 额外需要：`PowerShell 脚本放行 + Python 3 在 PATH 中`
+
+如果你想直接给 AI 一句最短指令，直接用：
+
+```text
+按 docs/ai-end-to-end-deploy-prompt.md 部署并验收 WeLink。
+```
 
 ### 验收前提
 
@@ -50,6 +59,35 @@ WeLink 把本地微信数据库整理成一条稳定链路：
 
 - `msg`：聊天图片缩略图 / 点击查看依赖它
 - `wechat-decrypt`：用于自动读取 `image_keys.json` / `config.json`，改善 2025-08+ V2 图片预览
+
+### 先从电脑微信拿到标准目录
+
+WeLink 不直接解密微信原始数据库；如果你当前手里只有电脑微信原始目录，先用 [`ylytdeng/wechat-decrypt`](https://github.com/ylytdeng/wechat-decrypt) 在容器外生成标准目录，再把结果交给 WeLink。
+
+先做这两步：
+
+1. 在电脑微信里确认历史聊天确实存在；如果电脑微信本身没有完整记录，后续解密和分析也不会完整
+2. 确保微信桌面端保持运行，再执行 `wechat-decrypt`
+
+典型解密产物应该是：
+
+```text
+decrypted_with_wal/
+├── contact/contact.db
+├── message/message_*.db
+└── sns/sns.db                 # optional
+```
+
+当前仓库已实测：
+
+- `ylytdeng/wechat-decrypt` 能产出 `sns/sns.db`
+- WeLink 可以读取该工具生成的 `image_keys.json`
+
+平台级解密步骤见：
+
+- Windows：[`docs/setup-windows.md`](docs/setup-windows.md)
+- macOS：[`docs/setup-macos.md`](docs/setup-macos.md)
+- 如果你想把整套流程交给另一台机器上的 AI，直接用：[`docs/ai-end-to-end-deploy-prompt.md`](docs/ai-end-to-end-deploy-prompt.md)
 
 ### 最短命令：manual-sync
 
@@ -137,6 +175,19 @@ curl http://localhost:8080/api/status
 - 适合“容器外工具持续更新 source，WeLink 负责校验 / 手动同步 / 重建索引”
 
 Docker 主文档见：[`docs/deploy-docker.md`](docs/deploy-docker.md)
+
+## 端到端流程
+
+如果你不是“已经手里有标准目录再部署”，而是要从电脑微信原始数据一路做到 WeLink，可按这条主线：
+
+1. 手机聊天记录迁移到电脑微信
+2. 在电脑微信里确认聊天确实能看到
+3. 保持微信运行
+4. 用 `ylytdeng/wechat-decrypt` 解密出标准目录
+5. 再用 WeLink 的 `analysis-only` 或 `manual-sync` 启动
+6. 启动后执行 `health -> config-check -> runtime -> status`
+
+Windows 和 macOS 的端到端实操命令，统一放在各自平台文档里，不在本页重复展开。
 
 ## 图片能力说明
 

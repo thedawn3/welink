@@ -2,6 +2,8 @@
 
 本页只负责 macOS 平台差异。Docker 模式、`.env`、目录契约、红色阻塞错误，以 [`deploy-docker.md`](./deploy-docker.md) 和 [`data-layout-and-troubleshooting.md`](./data-layout-and-troubleshooting.md) 为准。
 
+如果你是把整套流程交给另一台机器上的 AI，优先把 [`ai-end-to-end-deploy-prompt.md`](./ai-end-to-end-deploy-prompt.md) 丢给它，再让它按本页执行 macOS 细节。
+
 ## 1. macOS 一键部署前提
 
 在 macOS 机器上让 AI 拉仓并启动前，先确认：
@@ -9,6 +11,7 @@
 - 已安装 Git
 - 已安装 Docker Desktop，且 `docker compose version` 可用
 - 已安装 Python 3，且 `python3 --version` 可用
+- 如果你还没有标准目录，当前机器上的微信桌面端必须可正常打开并保持运行
 - 已准备至少一个标准目录：
 
 ```text
@@ -23,7 +26,64 @@
 - `msg`：只影响聊天图片缩略图 / 点击查看
 - `wechat-decrypt`：只影响自动读取 `image_keys.json` / `config.json`
 
-## 2. 先判断你属于哪种正式模式
+## 2. 先从电脑微信原始数据库得到标准目录
+
+如果你手里还没有标准目录，先不要直接启动 WeLink，先用 `wechat-decrypt` 在容器外解密。
+
+### 第一步：确认电脑微信里真的有聊天记录
+
+- 打开微信桌面端
+- 随机检查几个联系人和群聊，确认历史聊天确实存在
+- 如果电脑微信里本来就不全，后续解密与分析也不会完整
+
+如果还没迁移，请先让用户在手机微信执行：
+
+- 我 -> 设置 -> 通用 -> 聊天记录迁移与备份 -> 迁移到电脑
+
+### 第二步：拉取并运行 `wechat-decrypt`
+
+默认建议用 [`ylytdeng/wechat-decrypt`](https://github.com/ylytdeng/wechat-decrypt)：
+
+```bash
+git clone https://github.com/ylytdeng/wechat-decrypt
+cd wechat-decrypt
+sudo python3 main.py
+```
+
+说明：
+
+- 运行前请保持微信桌面端处于打开状态
+- 首次运行一般会自动生成 `config.json`
+- 如果自动检测失败，重点检查 `config.json` 里的路径是否真的指向 `xwechat_files/<wxid>/db_storage`
+
+### 第三步：确认解密输出
+
+你最终需要拿到的是标准目录，而不是微信原始根目录。
+
+解密完成后，至少确认以下内容存在：
+
+- `contact/contact.db`
+- `message/message_*.db`
+- 可选 `sns/sns.db`
+
+当前仓库已实测：`ylytdeng/wechat-decrypt` 可产出 `sns/sns.db`。
+
+### 第四步：可选补做图片 key
+
+如果你还希望 WeLink 里直接显示聊天图片缩略图并可点击查看：
+
+1. 先在微信里点开 2-3 张原图
+2. 回到 `wechat-decrypt` 目录执行：
+
+```bash
+./find_image_key
+```
+
+如果当前机器对应的是 Python 版脚本，则按该仓库 README 改用 `python3 find_image_key.py`。
+
+做完后，再把 `wechat-decrypt` 目录传给 WeLink 的 `--wechat-decrypt-dir`。
+
+## 3. 先判断你属于哪种正式模式
 
 ### `analysis-only`
 
@@ -38,7 +98,7 @@
 - `source` 不能直接指向 `xwechat_files` 根目录
 - `source` 与 `analysis` 不能是同一路径
 
-## 3. macOS AI 一键启动命令
+## 4. macOS AI 一键启动命令
 
 ### `analysis-only`
 
@@ -69,24 +129,6 @@ cd welink
 
 - `--msg-dir`：可省略；省略后不影响文本分析，但聊天图片缩略图 / 点击查看不可用
 - `--wechat-decrypt-dir`：可省略；省略后不影响基础部署，但 V2 图片不会自动读取 `image_keys.json`
-
-## 4. 如果你还没有标准目录
-
-默认建议用 [`ylytdeng/wechat-decrypt`](https://github.com/ylytdeng/wechat-decrypt) 在容器外先准备标准目录。
-
-典型流程：
-
-```bash
-git clone https://github.com/ylytdeng/wechat-decrypt
-cd wechat-decrypt
-sudo python3 main.py
-```
-
-当前仓库已实际验证：
-
-- 该工具可产出 `sns/sns.db`
-- 该工具目录可包含 `image_keys.json` / `config.json`
-- WeLink 配置 `WELINK_WECHAT_DECRYPT_DIR` 后可自动读取这些结果
 
 ## 5. 启动后只看这几条验收命令
 
@@ -126,6 +168,14 @@ python3 --version
 - 系统页拒绝同步
 
 正确做法是先用容器外工具整理出标准目录，再把标准目录传给 WeLink。
+
+### `wechat-decrypt` 解密不出来
+
+优先检查：
+
+- 微信桌面端是否正在运行
+- `config.json` 中的路径是否真的指向当前微信账号的数据目录
+- 电脑微信里是否本来就有完整聊天记录
 
 ### Docker 看不到目录
 
