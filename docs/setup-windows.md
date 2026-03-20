@@ -23,6 +23,7 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 - 这条执行策略命令按当前 PowerShell 会话生效；换新终端后可以重新执行一次
 - `scripts/welink-doctor.ps1` 会调用 Python 生成 `.env`，所以没有 Python 时脚本不会继续
 - Windows 路径统一建议写成正斜杠，例如 `C:/Users/you/...`
+- 如果把整套流程交给外部 AI，优先直接给它 `AI_DEPLOY.md` 或 `docs/ai-end-to-end-deploy-prompt.md`
 
 ## 2. 先从电脑微信原始数据库得到标准目录
 
@@ -73,6 +74,7 @@ python main.py
 - 运行前请保持微信桌面端处于打开状态
 - 首次运行一般会自动生成 `config.json`
 - 如果自动检测失败，重点检查 `config.json` 里的 `db_dir` 是否真的指向 `xwechat_files/<wxid>/db_storage`
+- 如果 `main.py` 读取失败或没有结果，优先重新以管理员权限打开 PowerShell，再重试；不要先怀疑 WeLink
 
 ### 第三步：确认解密输出
 
@@ -85,6 +87,14 @@ python main.py
 - 可选 `sns/sns.db`
 
 当前仓库已实测：`ylytdeng/wechat-decrypt` 可产出 `sns/sns.db`。
+
+建议立刻执行一次目录核验：
+
+```powershell
+Get-ChildItem 'C:/absolute/path/to/decrypted_standard_dir/contact'
+Get-ChildItem 'C:/absolute/path/to/decrypted_standard_dir/message'
+Get-ChildItem 'C:/absolute/path/to/decrypted_standard_dir/sns' -ErrorAction SilentlyContinue
+```
 
 ## 3. 可选：补做图片 key
 
@@ -100,6 +110,7 @@ py -3 find_image_key.py
 如果该仓库当前机器用的是其他脚本形式，也按其 README 选择 `find_image_key_monitor.py` 或等价命令。
 
 做完后，再把 `wechat-decrypt` 目录传给 WeLink 的 `-WechatDecryptDir`。
+如果这一步失败，不影响基础文本部署；先完成 WeLink 基础验收，再回头补图片 key。
 
 ## 4. 先判断你属于哪种正式模式
 
@@ -119,6 +130,7 @@ py -3 find_image_key.py
 - 只给 WeLink 一个 `analysis directory`
 - 不提供 `source standard directory`
 - Docker 不做容器内自动解密 / watcher
+- 如果你只有解密输出这一个目录，默认优先选 `analysis-only`
 
 ### `manual-sync`
 

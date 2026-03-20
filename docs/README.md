@@ -8,27 +8,32 @@
    - 项目总入口
    - macOS / Windows 一键启动命令
    - AI 最短验收命令
-2. [`ai-end-to-end-deploy-prompt.md`](./ai-end-to-end-deploy-prompt.md)
+2. [`../AI_DEPLOY.md`](../AI_DEPLOY.md)
+   - 给另一台机器上的 AI 的最短入口文件
+   - 适合一句话下发部署任务
+3. [`ai-end-to-end-deploy-prompt.md`](./ai-end-to-end-deploy-prompt.md)
    - 给另一台机器上的 AI 的最短部署提示词
    - 覆盖“电脑微信原始数据 -> wechat-decrypt -> WeLink -> 验收”
-3. [`deploy-docker.md`](./deploy-docker.md)
+4. [`deploy-docker.md`](./deploy-docker.md)
    - Docker 唯一主文档
    - `analysis-only` / `manual-sync` 两种正式模式
    - `.env`、挂载、`config-check -> runtime -> logs` 排障顺序
-4. [`setup-macos.md`](./setup-macos.md) 或 [`setup-windows.md`](./setup-windows.md)
+5. [`setup-macos.md`](./setup-macos.md) 或 [`setup-windows.md`](./setup-windows.md)
    - 只看各平台自己的前置条件、命令差异、常见坑
-5. [`data-layout-and-troubleshooting.md`](./data-layout-and-troubleshooting.md)
+6. [`data-layout-and-troubleshooting.md`](./data-layout-and-troubleshooting.md)
    - 统一的数据目录契约、图片 key、SNS、典型错误解释
-6. [`../mcp-server/README.md`](../mcp-server/README.md)
+7. [`../mcp-server/README.md`](../mcp-server/README.md)
    - 确认 WeLink 已启动并初始化后，再接 MCP
 
 如果是另一台机器上的 AI 来拉仓并部署，先看 `README -> deploy-docker -> 对应平台 setup`，不要一开始分散阅读所有历史文档。
+如果是外部 AI 执行，优先把 [`../AI_DEPLOY.md`](../AI_DEPLOY.md) 或 [`ai-end-to-end-deploy-prompt.md`](./ai-end-to-end-deploy-prompt.md) 直接丢给它，不要自己先重写流程。
 
 ## 主文档分工
 
 | 文档 | 负责什么 | 不负责什么 |
 |---|---|---|
 | [`../README.md`](../README.md) | 产品入口、两种正式模式、双平台一键命令、验收命令 | 不展开写所有 Docker 细节 |
+| [`../AI_DEPLOY.md`](../AI_DEPLOY.md) | 给 AI 的一句话部署入口 | 不替代详细平台文档 |
 | [`ai-end-to-end-deploy-prompt.md`](./ai-end-to-end-deploy-prompt.md) | 给 AI 的最短端到端部署提示词 | 不替代平台实操文档 |
 | [`deploy-docker.md`](./deploy-docker.md) | Docker 模式、挂载、`.env`、红色阻塞错误、验证顺序 | 不重复讲平台通用背景 |
 | [`setup-macos.md`](./setup-macos.md) | macOS 前置条件、命令、路径示例、平台注意事项 | 不重复解释完整 Docker 契约 |
@@ -40,6 +45,7 @@
 
 | 文档 | 说明 |
 |---|---|
+| [../AI_DEPLOY.md](../AI_DEPLOY.md) | 最短 AI 部署入口，适合直接下发给另一台机器上的 AI |
 | [deploy-docker.md](./deploy-docker.md) | Docker 主文档，推荐所有新机器先看 |
 | [ai-end-to-end-deploy-prompt.md](./ai-end-to-end-deploy-prompt.md) | 给另一台机器上的 AI 的最短提示词 |
 | [setup-macos.md](./setup-macos.md) | macOS 一键部署补充 |

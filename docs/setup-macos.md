@@ -25,6 +25,7 @@
 
 - `msg`：只影响聊天图片缩略图 / 点击查看
 - `wechat-decrypt`：只影响自动读取 `image_keys.json` / `config.json`
+- 如果把整套流程交给外部 AI，优先直接给它 `AI_DEPLOY.md` 或 `docs/ai-end-to-end-deploy-prompt.md`
 
 ## 2. 先从电脑微信原始数据库得到标准目录
 
@@ -68,6 +69,14 @@ sudo python3 main.py
 
 当前仓库已实测：`ylytdeng/wechat-decrypt` 可产出 `sns/sns.db`。
 
+建议立刻执行一次目录核验：
+
+```bash
+ls /absolute/path/to/decrypted_standard_dir/contact
+ls /absolute/path/to/decrypted_standard_dir/message
+ls /absolute/path/to/decrypted_standard_dir/sns 2>/dev/null || true
+```
+
 ### 第四步：可选补做图片 key
 
 如果你还希望 WeLink 里直接显示聊天图片缩略图并可点击查看：
@@ -82,6 +91,7 @@ sudo python3 main.py
 如果当前机器对应的是 Python 版脚本，则按该仓库 README 改用 `python3 find_image_key.py`。
 
 做完后，再把 `wechat-decrypt` 目录传给 WeLink 的 `--wechat-decrypt-dir`。
+如果这一步失败，不影响基础文本部署；先完成 WeLink 基础验收，再回头补图片能力。
 
 ## 3. 先判断你属于哪种正式模式
 
@@ -176,6 +186,7 @@ python3 --version
 - 微信桌面端是否正在运行
 - `config.json` 中的路径是否真的指向当前微信账号的数据目录
 - 电脑微信里是否本来就有完整聊天记录
+- 先修复上述问题并重试 `sudo python3 main.py`，不要先跳去改 WeLink
 
 ### Docker 看不到目录
 

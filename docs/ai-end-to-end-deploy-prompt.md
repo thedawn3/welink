@@ -38,16 +38,18 @@ cd welink
 
 仓库内必须优先阅读：
 1. README.md
-2. docs/deploy-docker.md
-3. 当前平台对应的 setup 文档：
+2. AI_DEPLOY.md
+3. docs/deploy-docker.md
+4. 当前平台对应的 setup 文档：
    - Windows: docs/setup-windows.md
    - macOS: docs/setup-macos.md
-4. docs/data-layout-and-troubleshooting.md
+5. docs/data-layout-and-troubleshooting.md
 
 执行边界：
 - wechat-decrypt 负责从运行中的微信进程和本地数据库生成标准目录
 - WeLink 只负责消费标准目录并分析展示
 - 不要把原始 xwechat_files 根目录直接传给 WeLink 的 DataDir 或 SourceDataDir
+- 如果没找到标准目录，必须停在“缺少标准目录”，不要擅自拿原始目录顶上
 
 标准目录定义：
 <STANDARD_DIR>/
@@ -62,10 +64,28 @@ cd welink
 固定要求：
 - 先确认电脑微信里真的有聊天记录；如果电脑微信本身不完整，后续结果也不会完整
 - 如果还没有标准目录，先运行 ylytdeng/wechat-decrypt
+- 在运行 wechat-decrypt 前，必须确认微信桌面端正在运行
 - Windows 必须先执行 Set-ExecutionPolicy -Scope Process Bypass -Force
 - Python 3 必须可用
 - docker compose version 必须可用
 - source 和 analysis 不能是同一路径
+
+启动 WeLink 前必须先输出：
+1. 仓库实际路径
+2. 当前平台
+3. 标准目录路径
+4. 目录完整性检查结果：
+   - contact/contact.db 是否存在
+   - message/message_*.db 是否存在
+   - sns/sns.db 是否存在
+
+Windows 平台额外必须先打印：
+- docker compose version
+- py -3 --version 或 python --version
+
+如果 config-check 仍阻塞：
+- 禁止继续尝试 start_decrypt 或猜测目录
+- 必须先输出阻塞原因和修复建议
 
 启动 WeLink 后固定验收：
 curl http://localhost:8080/api/health
@@ -82,16 +102,18 @@ curl -X POST http://localhost:8080/api/system/reindex
 3. /api/system/logs
 
 输出要求：
-1. 明确说明电脑微信聊天记录是否已确认完整
-2. 明确说明是否运行了 wechat-decrypt
-3. 明确写出最终使用的标准目录路径
-4. 明确写出该目录里是否存在：
+1. 仓库路径
+2. 平台
+3. 电脑微信聊天记录是否已确认完整
+4. wechat-decrypt 是否执行成功
+5. 最终使用的标准目录路径
+6. 目录完整性检查结果：
    - contact/contact.db
    - message/message_*.db
    - sns/sns.db
-5. 明确说明最终使用的是 analysis-only 还是 manual-sync
-6. 给出 4 条验收接口结果
-7. 如果失败，给出具体阻塞原因和下一步修复建议
+7. 最终使用的是 analysis-only 还是 manual-sync
+8. 4 条验收接口结果
+9. 阻塞项 / 下一步修复建议
 ```
 
 ## 平台提醒
@@ -100,3 +122,4 @@ curl -X POST http://localhost:8080/api/system/reindex
 - macOS：完整步骤看 `docs/setup-macos.md`
 - Docker 模式与 `.env` 看 `docs/deploy-docker.md`
 - 图片 key / `sns.db` / 目录排障看 `docs/data-layout-and-troubleshooting.md`
+- 图片 key 失败不阻塞基础文本部署；先完成基础验收，再回头补图片能力

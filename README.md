@@ -16,6 +16,7 @@ WeLink 把本地微信数据库整理成一条稳定链路：
 ## 先看哪份文档
 
 - 一键部署入口：`README.md`（本页）
+- AI 一句话部署入口：[`AI_DEPLOY.md`](AI_DEPLOY.md)
 - Docker 主文档：[`docs/deploy-docker.md`](docs/deploy-docker.md)
 - macOS 平台说明：[`docs/setup-macos.md`](docs/setup-macos.md)
 - Windows 平台说明：[`docs/setup-windows.md`](docs/setup-windows.md)
@@ -38,8 +39,14 @@ WeLink 把本地微信数据库整理成一条稳定链路：
 如果你想直接给 AI 一句最短指令，直接用：
 
 ```text
-克隆 https://github.com/thedawn3/welink ，按 docs/ai-end-to-end-deploy-prompt.md 部署并验收 WeLink。
+克隆 https://github.com/thedawn3/welink ，按 AI_DEPLOY.md 部署并验收 WeLink。
 ```
+
+硬约束：
+
+- 如果仓库尚未 clone，先 clone
+- 如果手里还不是标准目录，先解密
+- 不要把 `xwechat_files` 根目录直接传给 WeLink
 
 ### 验收前提
 
@@ -157,6 +164,12 @@ curl http://localhost:8080/api/status
 - `/api/system/config-check` 没有顶层阻塞错误
 - `/api/system/runtime` 中 `is_initialized=true`
 - 前端可打开 `http://localhost:3000`
+
+最短成功判定模板：
+
+- `health=200`
+- `config-check=无阻塞`
+- `runtime.is_initialized=true`
 
 ## Docker 正式模式
 
