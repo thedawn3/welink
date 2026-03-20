@@ -38,7 +38,7 @@ WeLink 把本地微信数据库整理成一条稳定链路：
 如果你想直接给 AI 一句最短指令，直接用：
 
 ```text
-按 docs/ai-end-to-end-deploy-prompt.md 部署并验收 WeLink。
+克隆 https://github.com/thedawn3/welink ，按 docs/ai-end-to-end-deploy-prompt.md 部署并验收 WeLink。
 ```
 
 ### 验收前提

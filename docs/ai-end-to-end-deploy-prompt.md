@@ -7,13 +7,13 @@
 如果目标 AI 可以读取仓库文件，直接给它这句就够：
 
 ```text
-请严格按 docs/ai-end-to-end-deploy-prompt.md 完成 WeLink 端到端部署：先确认电脑微信聊天记录完整，再用 wechat-decrypt 解密出标准目录，然后启动 WeLink，最后完成接口验收并报告结果。
+请克隆 https://github.com/thedawn3/welink ，然后严格按仓库里的 docs/ai-end-to-end-deploy-prompt.md 完成 WeLink 端到端部署：先确认电脑微信聊天记录完整，再用 wechat-decrypt 解密出标准目录，然后启动 WeLink，最后完成接口验收并报告结果。
 ```
 
 如果你想再短一点，可用：
 
 ```text
-按 docs/ai-end-to-end-deploy-prompt.md 部署并验收 WeLink。
+克隆 https://github.com/thedawn3/welink ，按 docs/ai-end-to-end-deploy-prompt.md 部署并验收 WeLink。
 ```
 
 ## 给 AI 的完整执行说明
@@ -27,6 +27,14 @@
 3. 拿到标准目录后，再启动 WeLink
 4. 启动后完成接口验收
 5. 输出实际执行结果、阻塞原因和下一步建议
+
+仓库地址：
+- WeLink: https://github.com/thedawn3/welink
+- wechat-decrypt: https://github.com/ylytdeng/wechat-decrypt
+
+如果当前机器还没有 WeLink 仓库，先执行：
+git clone https://github.com/thedawn3/welink.git
+cd welink
 
 仓库内必须优先阅读：
 1. README.md
