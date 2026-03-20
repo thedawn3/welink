@@ -5,3 +5,4 @@
 export { useContacts, useWordCloud } from './useContacts';
 export { useGlobalStats } from './useGlobalStats';
 export { useBackendStatus } from './useBackendStatus';
+export { useSystemRuntime } from './useSystemRuntime';

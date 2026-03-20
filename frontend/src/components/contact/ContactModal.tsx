@@ -27,6 +27,7 @@ interface ContactModalProps {
   onClose: () => void;
   initialTab?: ModalTab;
   initialControversyLabel?: string;
+  refreshKey?: string | number;
   onGroupClick?: (group: GroupInfo) => void;
   onBlock?: (username: string) => void;
 }
@@ -109,6 +110,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
   onClose,
   initialTab = 'wordcloud',
   initialControversyLabel,
+  refreshKey,
   onGroupClick,
   onBlock,
 }) => {
@@ -132,6 +134,8 @@ export const ContactModal: React.FC<ContactModalProps> = ({
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchDone, setSearchDone] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const lastRefreshKeyRef = useRef<string>('');
+  const prevContactRef = useRef<ContactStats | null>(null);
 
   const fetchDetail = useCallback(async (username: string) => {
     setDetailLoading(true);
@@ -186,6 +190,9 @@ export const ContactModal: React.FC<ContactModalProps> = ({
 
   useEffect(() => {
     if (contact) {
+      lastRefreshKeyRef.current = refreshKey === undefined || refreshKey === null
+        ? ''
+        : `${contact.username}:${String(refreshKey)}`;
       setTab(initialTab);
       setDetail(null);
       setSentiment(null);
@@ -222,6 +229,62 @@ export const ContactModal: React.FC<ContactModalProps> = ({
       setSearchLoading(false);
     }
   }, [contact, includeMine]);
+
+  const refreshCurrentTab = useCallback(async () => {
+    if (!contact) return;
+    const username = contact.username;
+
+    contactsApi.getCommonGroups(username).then(setCommonGroups).catch(() => {});
+
+    switch (tab) {
+      case 'wordcloud':
+        await fetchWordCloud(username, includeMine);
+        break;
+      case 'detail':
+        await fetchDetail(username);
+        break;
+      case 'sentiment':
+        await fetchSentiment(username, includeMine);
+        break;
+      case 'search':
+        if (searchQuery.trim()) {
+          await handleSearch(searchQuery);
+        }
+        break;
+      case 'analysis':
+        await Promise.all([
+          fetchRelationDetail(username),
+          fetchControversyDetail(username),
+        ])
+        break;
+      case 'timeline':
+      default:
+        break;
+    }
+  }, [
+    contact,
+    fetchControversyDetail,
+    fetchDetail,
+    fetchRelationDetail,
+    fetchSentiment,
+    fetchWordCloud,
+    handleSearch,
+    includeMine,
+    searchQuery,
+    tab,
+  ]);
+
+  useEffect(() => {
+    if (!contact || refreshKey === undefined || refreshKey === null) return;
+    const nextKey = `${contact.username}:${String(refreshKey)}`;
+    if (!lastRefreshKeyRef.current) {
+      lastRefreshKeyRef.current = nextKey;
+      return;
+    }
+    if (lastRefreshKeyRef.current === nextKey) return;
+    lastRefreshKeyRef.current = nextKey;
+    void refreshCurrentTab();
+  }, [contact, refreshCurrentTab, refreshKey]);
 
   // 切换「包含我的消息」时重新拉取词云和情感
   const handleToggleMine = (val: boolean) => {
@@ -437,6 +500,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
             contactName={displayName}
             focusDate={timelineFocus?.date}
             focusKey={timelineFocus?.key}
+            refreshKey={refreshKey}
           />
         )}
 
@@ -494,6 +558,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
               totalMessages={contact.total_messages}
               username={contact.username}
               contactName={displayName}
+              refreshKey={refreshKey}
               onHeatmapDayClick={(date) => focusTimelineDate(date)}
             />
           ) : (
@@ -507,7 +572,13 @@ export const ContactModal: React.FC<ContactModalProps> = ({
               正在分析情感...
             </div>
           ) : sentiment ? (
-            <SentimentChart data={sentiment} username={contact.username} contactName={displayName} includeMine={includeMine} />
+            <SentimentChart
+              data={sentiment}
+              username={contact.username}
+              contactName={displayName}
+              includeMine={includeMine}
+              refreshKey={refreshKey}
+            />
           ) : (
             <div className="text-center text-gray-300 py-12">暂无情感数据</div>
           )

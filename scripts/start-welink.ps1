@@ -1,5 +1,10 @@
 param(
-  [string]$DataDir = $env:WELINK_DATA_DIR,
+  [ValidateSet('analysis-only', 'decrypt-first')]
+  [string]$Mode = $(if ($env:WELINK_MODE) { $env:WELINK_MODE } else { 'analysis-only' }),
+  [string]$Platform = $(if ($env:WELINK_PLATFORM) { $env:WELINK_PLATFORM } else { 'auto' }),
+  [string]$DataDir = $(if ($env:WELINK_ANALYSIS_DATA_DIR) { $env:WELINK_ANALYSIS_DATA_DIR } else { $env:WELINK_DATA_DIR }),
+  [string]$SourceDataDir = $env:WELINK_SOURCE_DATA_DIR,
+  [string]$WorkDir = $env:WELINK_WORK_DIR,
   [string]$MsgDir = $env:WELINK_MSG_DIR
 )
 
@@ -35,16 +40,31 @@ try {
   throw "'docker compose' is unavailable. Enable Docker Compose v2 in Docker Desktop."
 }
 
-& $DoctorScript -DataDir $DataDir -MsgDir $MsgDir -WriteEnv
+& $DoctorScript -Mode $Mode -Platform $Platform -DataDir $DataDir -SourceDataDir $SourceDataDir -WorkDir $WorkDir -MsgDir $MsgDir -WriteEnv
 
 Push-Location $RepoRoot
 try {
   docker compose up -d --build
+  $ResolvedMode = Get-EnvValueFromFile -Key "WELINK_MODE" -Fallback $Mode
+  $ResolvedPlatform = Get-EnvValueFromFile -Key "WELINK_PLATFORM" -Fallback $Platform
+  $ResolvedSourceDataDir = Get-EnvValueFromFile -Key "WELINK_SOURCE_DATA_DIR" -Fallback $SourceDataDir
+  $ResolvedWorkDir = Get-EnvValueFromFile -Key "WELINK_WORK_DIR" -Fallback $WorkDir
   $FrontendPort = Get-EnvValueFromFile -Key "WELINK_FRONTEND_PORT" -Fallback "3000"
   $BackendPort = Get-EnvValueFromFile -Key "WELINK_BACKEND_PORT" -Fallback "8080"
   Write-Host "WeLink started."
   Write-Host "Local frontend: http://localhost:$FrontendPort"
   Write-Host "Local backend : http://localhost:$BackendPort"
+
+  if ($ResolvedMode -eq "decrypt-first") {
+    Write-Host ""
+    Write-Host "decrypt-first mode detected."
+    Write-Host "Backend is configured to auto-start decrypt on boot."
+    Write-Host "Manual override example:"
+    Write-Host "curl -Method Post http://localhost:$BackendPort/api/system/decrypt/start -ContentType 'application/json' -Body '{`"platform`":`"$ResolvedPlatform`",`"source_data_dir`":`"$ResolvedSourceDataDir`",`"work_dir`":`"$ResolvedWorkDir`",`"auto_refresh`":true,`"wal_enabled`":true}'"
+    Write-Host ""
+    Write-Host "Check runtime:"
+    Write-Host "curl http://localhost:$BackendPort/api/system/runtime"
+  }
 } finally {
   Pop-Location
 }

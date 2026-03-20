@@ -6,14 +6,33 @@ services:
     ports:
       - "${WELINK_BACKEND_PORT:-8080}:8080"
     volumes:
-      - ${WELINK_DATA_DIR:-./decrypted}:/app/data:ro
+      - ${WELINK_SOURCE_DATA_DIR:-./.tmp/welink-empty-source}:/app/source-data:ro
+      - ${WELINK_ANALYSIS_DATA_DIR:-./decrypted}:/app/analysis-data
+      - ${WELINK_WORK_DIR:-./.tmp/welink-workdir}:/app/workdir
       - ${WELINK_MSG_DIR:-./.tmp/welink-empty-msg}:/app/msg:ro
       - ./config.yaml:/app/config.yaml:ro
     environment:
       - GIN_MODE=${WELINK_GIN_MODE:-release}
-      - WELINK_DATA_DIR=/app/data
+      - WELINK_DATA_DIR=/app/analysis-data
+      - WELINK_SOURCE_DATA_DIR=/app/source-data
+      - WELINK_ANALYSIS_DATA_DIR=/app/analysis-data
+      - WELINK_WORK_DIR=/app/workdir
       - WELINK_MSG_DIR=/app/msg
-      - DATA_DIR=/app/data
+      - WELINK_INGEST_ENABLED=${WELINK_INGEST_ENABLED:-false}
+      - WELINK_PLATFORM=${WELINK_PLATFORM:-auto}
+      - WELINK_SYNC_ENABLED=${WELINK_SYNC_ENABLED:-false}
+      - WELINK_SYNC_WATCH_WAL=${WELINK_SYNC_WATCH_WAL:-true}
+      - WELINK_SYNC_DEBOUNCE_MS=${WELINK_SYNC_DEBOUNCE_MS:-1000}
+      - WELINK_SYNC_MAX_WAIT_MS=${WELINK_SYNC_MAX_WAIT_MS:-10000}
+      - WELINK_SYNC_EVENT_BUFFER=${WELINK_SYNC_EVENT_BUFFER:-128}
+      - WELINK_DECRYPT_ENABLED=${WELINK_DECRYPT_ENABLED:-false}
+      - WELINK_DECRYPT_AUTO_START=${WELINK_DECRYPT_AUTO_START:-false}
+      - WELINK_DECRYPT_PROVIDER=${WELINK_DECRYPT_PROVIDER:-builtin}
+      - WELINK_WINDOWS_DECRYPT_COMMAND=${WELINK_WINDOWS_DECRYPT_COMMAND:-}
+      - WELINK_MAC_DECRYPT_COMMAND=${WELINK_MAC_DECRYPT_COMMAND:-}
+      - WELINK_LINUX_DECRYPT_COMMAND=${WELINK_LINUX_DECRYPT_COMMAND:-}
+      - WELINK_RUNTIME_ENGINE_TYPE=${WELINK_RUNTIME_ENGINE_TYPE:-welink}
+      - DATA_DIR=/app/analysis-data
       - MSG_DIR=/app/msg
 
   frontend:

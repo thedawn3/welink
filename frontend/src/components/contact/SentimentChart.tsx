@@ -16,6 +16,7 @@ interface Props {
   username: string;
   contactName: string;
   includeMine?: boolean;
+  refreshKey?: string | number;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -38,10 +39,11 @@ interface MonthPanelProps {
   month: string;
   contactName: string;
   includeMine: boolean;
+  refreshKey?: string | number;
   onClose: () => void;
 }
 
-const MonthMessagesPanel: React.FC<MonthPanelProps> = ({ username, month, contactName, includeMine, onClose }) => {
+export const MonthMessagesPanel: React.FC<MonthPanelProps> = ({ username, month, contactName, includeMine, refreshKey, onClose }) => {
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [loading, setLoading] = React.useState(true);
   const bottomRef = React.useRef<HTMLDivElement>(null);
@@ -52,7 +54,7 @@ const MonthMessagesPanel: React.FC<MonthPanelProps> = ({ username, month, contac
       .then(data => setMessages(data ?? []))
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [username, month, includeMine]);
+  }, [username, month, includeMine, refreshKey]);
 
   React.useEffect(() => {
     if (!loading) {
@@ -119,7 +121,7 @@ const MonthMessagesPanel: React.FC<MonthPanelProps> = ({ username, month, contac
   );
 };
 
-export const SentimentChart: React.FC<Props> = ({ data, username, contactName, includeMine = true }) => {
+export const SentimentChart: React.FC<Props> = ({ data, username, contactName, includeMine = true, refreshKey }) => {
   const { monthly, overall, positive, negative, neutral } = data;
   const total = positive + negative + neutral;
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
@@ -236,6 +238,7 @@ export const SentimentChart: React.FC<Props> = ({ data, username, contactName, i
           month={selectedMonth}
           contactName={contactName}
           includeMine={includeMine}
+          refreshKey={refreshKey}
           onClose={() => setSelectedMonth(null)}
         />
       )}

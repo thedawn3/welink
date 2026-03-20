@@ -31,9 +31,10 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
   const today = new Date().toISOString().slice(0, 10);
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState(today);
-  const repoUrl = 'https://github.com/runzhliu/welink';
-  const docsBaseUrl = `${repoUrl}/tree/main/docs`;
-  const mcpDocsUrl = `${repoUrl}/tree/main/mcp-server/README.md`;
+  const repoUrl = 'https://github.com/thedawn3/welink';
+  const docsBaseUrl = `${repoUrl}/blob/main/docs`;
+  const mcpDocsUrl = `${repoUrl}/blob/main/mcp-server/README.md`;
+  const dockerDocsUrl = `${docsBaseUrl}/deploy-docker.md`;
 
   const handleStart = () => {
     const opt = OPTIONS[selected];
@@ -69,7 +70,7 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
             className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 rounded-full bg-[#1d1d1f] text-white text-xs font-semibold hover:bg-[#333] transition-colors"
           >
             <Github size={13} />
-            runzhliu/welink
+            thedawn3/welink
           </a>
         </div>
 
@@ -109,6 +110,15 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
             >
               <FileText size={12} />
               数据排障
+            </a>
+            <a
+              href={dockerDocsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
+            >
+              <Database size={12} />
+              Docker 部署
             </a>
           </div>
         </div>
@@ -195,7 +205,19 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onStart, loading }) =>
                   <Terminal size={12} className="text-gray-400 flex-shrink-0" />
                   <code className="text-xs text-gray-600 font-mono">./scripts/start-welink.sh</code>
                 </div>
-                <p className="text-xs text-gray-400 mt-1.5">macOS 可直接用脚本；Windows 用 <span className="font-mono">.\scripts\start-welink.ps1</span>。若你自定义了端口，以 `.env` 为准。</p>
+                <p className="text-xs text-gray-400 mt-1.5">
+                  macOS 可直接用脚本；Windows 用 <span className="font-mono">.\scripts\start-welink.ps1</span>。若你自定义了端口，以 `.env` 为准；完整容器启动、`.env` 生成与端口冲突处理见
+                  {' '}
+                  <a
+                    href={dockerDocsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#07c160] hover:underline font-medium"
+                  >
+                    Docker 部署文档
+                  </a>
+                  。
+                </p>
               </div>
             </div>
           </div>

@@ -8,6 +8,7 @@ interface ContactTimelinePanelProps {
   contactName: string;
   focusDate?: string;
   focusKey?: number;
+  refreshKey?: string | number;
   className?: string;
   pageSize?: number;
 }
@@ -105,6 +106,7 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
   contactName,
   focusDate,
   focusKey,
+  refreshKey,
   className,
   pageSize = 80,
 }) => {
@@ -189,6 +191,11 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
     focusFetchedRef.current = {};
     void loadLatest();
   }, [username]);
+
+  useEffect(() => {
+    if (refreshKey === undefined || refreshKey === null) return;
+    void loadLatest();
+  }, [refreshKey, username]);
 
   const focusOnDate = (targetDate: string) => {
     if (!targetDate) return;

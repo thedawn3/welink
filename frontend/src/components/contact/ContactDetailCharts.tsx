@@ -14,6 +14,7 @@ interface Props {
   totalMessages: number;
   username: string;
   contactName: string;
+  refreshKey?: string | number;
   onHeatmapDayClick?: (date: string, count: number) => void;
 }
 
@@ -24,7 +25,7 @@ const WEEK_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六',
 const HOUR_COLOR = '#10aeff';
 const WEEK_COLOR = '#07c160';
 
-export const ContactDetailCharts: React.FC<Props> = ({ detail, totalMessages, username, contactName, onHeatmapDayClick }) => {
+export const ContactDetailCharts: React.FC<Props> = ({ detail, totalMessages, username, contactName, refreshKey, onHeatmapDayClick }) => {
   const [dayPanel, setDayPanel] = useState<{ date: string; count: number } | null>(null);
   const hourlyData = detail.hourly_dist.map((v, h) => ({
     label: `${h.toString().padStart(2, '0')}`,
@@ -152,6 +153,7 @@ export const ContactDetailCharts: React.FC<Props> = ({ detail, totalMessages, us
           date={dayPanel.date}
           dayCount={dayPanel.count}
           contactName={contactName}
+          refreshKey={refreshKey}
           onClose={() => setDayPanel(null)}
         />
       )}

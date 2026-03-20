@@ -3,7 +3,7 @@
  * 重构版本 - 组件化 + 微信风格设计
  */
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Users, MessageSquare, Flame, Snowflake, Search } from 'lucide-react';
 
 // Layout Components
@@ -33,16 +33,19 @@ import { WelcomePage } from './components/common/WelcomePage';
 
 // Privacy Components
 import { PrivacyView } from './components/privacy/PrivacyView';
+import { SystemRuntimeView } from './components/system/SystemRuntimeView';
 
 // Hooks
 import { useContacts } from './hooks/useContacts';
 import { useGlobalStats } from './hooks/useGlobalStats';
 import { useBackendStatus } from './hooks/useBackendStatus';
 import { usePrivacySettings } from './hooks/usePrivacySettings';
+import { useSystemRuntime } from './hooks/useSystemRuntime';
 
 // Types
 import type {
   TabType,
+  DecryptStartOptions,
   ContactStats,
   HealthStatus,
   TimeRange,
@@ -50,11 +53,12 @@ import type {
   GlobalSearchHit,
   RelationOverview,
   ControversyOverview,
+  ChatLabExportResponse,
 } from './types';
 
 // Utils
 import { formatCompactNumber } from './utils/formatters';
-import { contactsApi, globalApi, groupsApi, relationsApi } from './services/api';
+import { contactsApi, exportApi, globalApi, groupsApi, relationsApi, systemApi } from './services/api';
 
 const ALL_TIME: TimeRange = { from: null, to: null, label: '全部' };
 
@@ -107,12 +111,26 @@ function App() {
     } catch { return ALL_TIME; }
   });
   const [initLoading, setInitLoading] = useState(false);
+  const [systemActionNotice, setSystemActionNotice] = useState<string | null>(null);
   const [hasStarted, setHasStarted] = useState(() => {
     return localStorage.getItem('welink_hasStarted') === 'true';
   });
 
   // Backend Status Hook
-  const { isInitialized, isIndexing, backendReady, startPolling } = useBackendStatus(1000);
+  const { status: backendStatus, isInitialized, isIndexing, backendReady, startPolling } = useBackendStatus(1000);
+  const {
+    runtime,
+    configCheck,
+    changes: runtimeChanges,
+    tasks: runtimeTasks,
+    logs: runtimeLogs,
+    latestEvent,
+    eventsConnected,
+    loading: runtimeLoading,
+    error: runtimeError,
+    meta: runtimeMeta,
+    refresh: refreshRuntime,
+  } = useSystemRuntime(backendReady, 5000);
 
   // Privacy settings
   const {
@@ -125,36 +143,88 @@ function App() {
   } = usePrivacySettings();
 
   // Data Hooks (只在初始化完成后启动)
-  const { contacts: allContacts, loading: contactsLoading } = useContacts(isInitialized, 15000);
-  const { stats: rawGlobalStats } = useGlobalStats(isInitialized, 15000);
+  const {
+    contacts: allContacts,
+    loading: contactsLoading,
+    refresh: refreshContacts,
+  } = useContacts(isInitialized, 15000);
+  const {
+    stats: rawGlobalStats,
+    refresh: refreshGlobalStats,
+  } = useGlobalStats(isInitialized, 15000);
   const [allGroups, setAllGroups] = useState<GroupInfo[]>([]);
   const [relationOverview, setRelationOverview] = useState<RelationOverview | null>(null);
   const [relationOverviewLoading, setRelationOverviewLoading] = useState(false);
   const [controversyOverview, setControversyOverview] = useState<ControversyOverview | null>(null);
   const [controversyOverviewLoading, setControversyOverviewLoading] = useState(false);
-  useEffect(() => {
-    if (isInitialized) groupsApi.getList().then((d) => setAllGroups(d || [])).catch(() => {});
+  const loadGroups = useCallback(async () => {
+    if (!isInitialized) return;
+    try {
+      const list = await groupsApi.getList();
+      setAllGroups(list || []);
+    } catch (error) {
+      console.error('Failed to fetch group list', error);
+    }
   }, [isInitialized]);
-  useEffect(() => {
+
+  const loadRelationData = useCallback(async () => {
     if (!isInitialized) return;
     setRelationOverviewLoading(true);
     setControversyOverviewLoading(true);
-    relationsApi.getOverview()
-      .then((data) => setRelationOverview(data))
-      .catch((error) => {
-        console.error('Failed to fetch relation overview', error);
-        setRelationOverview(null);
-      })
-      .finally(() => setRelationOverviewLoading(false));
-    relationsApi.getControversyOverview()
-      .then((data) => setControversyOverview(data))
-      .catch((error) => {
-        console.error('Failed to fetch controversy overview', error);
-        setControversyOverview(null);
-      })
-      .finally(() => setControversyOverviewLoading(false));
+    try {
+      const [overview, controversy] = await Promise.all([
+        relationsApi.getOverview().catch((error) => {
+          console.error('Failed to fetch relation overview', error);
+          return null;
+        }),
+        relationsApi.getControversyOverview().catch((error) => {
+          console.error('Failed to fetch controversy overview', error);
+          return null;
+        }),
+      ]);
+      setRelationOverview(overview);
+      setControversyOverview(controversy);
+    } finally {
+      setRelationOverviewLoading(false);
+      setControversyOverviewLoading(false);
+    }
   }, [isInitialized]);
+
+  useEffect(() => {
+    void loadGroups();
+  }, [loadGroups]);
+
+  useEffect(() => {
+    void loadRelationData();
+  }, [loadRelationData]);
+
+  const refreshDerivedData = useCallback(() => {
+    refreshContacts();
+    refreshGlobalStats();
+    void loadGroups();
+    void loadRelationData();
+  }, [refreshContacts, refreshGlobalStats, loadGroups, loadRelationData]);
+
+  const lastRefreshEventId = useRef<string | null>(null);
   const statsLoading = contactsLoading;
+
+  useEffect(() => {
+    if (!selectedContact) return;
+    const next = allContacts.find((item) => item.username === selectedContact.username);
+    if (!next) return;
+    if (next !== selectedContact) {
+      setSelectedContact(next);
+    }
+  }, [allContacts, selectedContact]);
+
+  useEffect(() => {
+    if (!selectedGroup) return;
+    const next = allGroups.find((item) => item.username === selectedGroup.username);
+    if (!next) return;
+    if (next !== selectedGroup) {
+      setSelectedGroup(next);
+    }
+  }, [allGroups, selectedGroup]);
 
   // 屏蔽过滤后的联系人列表
   const contacts = useMemo(() => {
@@ -299,6 +369,13 @@ function App() {
     return { hot, warm, cold };
   }, [contacts]);
 
+  const mergedRuntimeStatus = useMemo(() => {
+    return {
+      ...(backendStatus ?? {}),
+      ...(runtime ?? {}),
+    };
+  }, [backendStatus, runtime]);
+
   // Handlers
   const handleContactClick = (contact: ContactStats) => {
     setSelectedGroup(null);
@@ -331,6 +408,22 @@ function App() {
       setGlobalSearchLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!latestEvent) return;
+    const relevant =
+      latestEvent.revision != null ||
+      latestEvent.type?.startsWith('runtime.revision') ||
+      latestEvent.type?.startsWith('runtime.reindex') ||
+      latestEvent.type === 'runtime.decrypt.finished';
+    if (!relevant) return;
+    if (latestEvent.id && lastRefreshEventId.current === latestEvent.id) return;
+    lastRefreshEventId.current = latestEvent.id ?? lastRefreshEventId.current;
+    refreshDerivedData();
+    if (globalSearchTouched && globalQuery.trim()) {
+      void runGlobalSearch(globalQuery, globalIncludeMine);
+    }
+  }, [globalIncludeMine, globalQuery, globalSearchTouched, latestEvent, refreshDerivedData, runGlobalSearch]);
 
   const handleOpenSearchContact = useCallback((username: string) => {
     const contact = allContacts.find((item) => item.username === username);
@@ -395,12 +488,127 @@ function App() {
     localStorage.removeItem('welink_timeRange');
   };
 
+  const runRuntimeAction = useCallback(async (fn: () => Promise<unknown>, successText: string) => {
+    try {
+      await fn();
+      setSystemActionNotice(successText);
+      await refreshRuntime();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '操作失败';
+      setSystemActionNotice(message);
+    }
+  }, [refreshRuntime]);
+
+  const handleStartDecrypt = useCallback((options?: DecryptStartOptions) => {
+    const summary = [
+      options?.platform ? `平台 ${options.platform}` : null,
+      options?.auto_refresh === false ? '自动刷新关闭' : '自动刷新开启',
+      options?.wal_enabled === false ? 'WAL 关闭' : 'WAL 开启',
+    ].filter(Boolean).join(' · ');
+    return runRuntimeAction(
+      () => systemApi.startDecrypt(options ?? {}),
+      summary ? `已触发解密启动（${summary}）` : '已触发解密启动',
+    );
+  }, [runRuntimeAction]);
+
+  const handleStopDecrypt = useCallback(() => {
+    return runRuntimeAction(() => systemApi.stopDecrypt(), '已触发解密停止');
+  }, [runRuntimeAction]);
+
+  const handleReindex = useCallback(() => {
+    return runRuntimeAction(async () => {
+      await systemApi.reindex(timeRange.from, timeRange.to);
+      startPolling();
+    }, `已触发索引重建（${timeRange.label}）`);
+  }, [runRuntimeAction, startPolling, timeRange.from, timeRange.label, timeRange.to]);
+
+  const downloadChatLabPayload = useCallback((payload: unknown, fallbackName: string) => {
+    const record = (payload && typeof payload === 'object') ? payload as Record<string, unknown> : null;
+    const fileName = typeof record?.file_name === 'string' ? record.file_name : fallbackName;
+    const mimeType = typeof record?.mime_type === 'string' ? record.mime_type : 'application/json';
+    const content = Object.prototype.hasOwnProperty.call(record ?? {}, 'data') ? record?.data : payload;
+    const blob = new Blob([JSON.stringify(content, null, 2)], { type: mimeType });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    window.URL.revokeObjectURL(url);
+  }, []);
+
+  const formatExportNotice = useCallback((kind: string, target: string, payload: ChatLabExportResponse) => {
+    const summary = payload.summary;
+    const messageCount = summary?.message_count;
+    const memberCount = summary?.member_count;
+    const conversationName = summary?.conversation_name;
+    const countText = [
+      typeof messageCount === 'number' ? `${messageCount} 条消息` : null,
+      typeof memberCount === 'number' ? `${memberCount} 位成员` : null,
+    ].filter(Boolean).join(' / ');
+    const displayTarget = conversationName || target;
+    return `${kind} ChatLab 导出完成：${displayTarget}${countText ? `（${countText}）` : ''}`;
+  }, []);
+
+  const handleExportContact = useCallback(async (username: string, limit = 200) => {
+    const target = username.trim();
+    if (!target) {
+      setSystemActionNotice('请输入联系人 username');
+      return;
+    }
+    try {
+      const data = await exportApi.exportChatLabContact(target, limit);
+      downloadChatLabPayload(data, `chatlab-contact-${target}.json`);
+      setSystemActionNotice(formatExportNotice('联系人', target, data));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '导出失败';
+      setSystemActionNotice(message);
+    }
+  }, [downloadChatLabPayload, formatExportNotice]);
+
+  const handleExportGroup = useCallback(async (username: string, date?: string) => {
+    const target = username.trim();
+    if (!target) {
+      setSystemActionNotice('请输入群聊 username');
+      return;
+    }
+    try {
+      const data = await exportApi.exportChatLabGroup(target, date);
+      downloadChatLabPayload(data, `chatlab-group-${target}.json`);
+      setSystemActionNotice(formatExportNotice('群聊', target, data));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '导出失败';
+      setSystemActionNotice(message);
+    }
+  }, [downloadChatLabPayload, formatExportNotice]);
+
+  const handleExportSearch = useCallback(async (query: string, includeMine = true, limit = 200) => {
+    const target = query.trim();
+    if (!target) {
+      setSystemActionNotice('请输入搜索关键词');
+      return;
+    }
+    try {
+      const data = await exportApi.exportChatLabSearch(target, includeMine, limit);
+      downloadChatLabPayload(data, `chatlab-search-${Date.now()}.json`);
+      setSystemActionNotice(formatExportNotice('搜索结果', target, data));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '导出失败';
+      setSystemActionNotice(message);
+    }
+  }, [downloadChatLabPayload, formatExportNotice]);
+
   // 后端重启后自动重新触发索引（localStorage 有记录但后端尚未索引）
   useEffect(() => {
     if (backendReady && hasStarted && !isInitialized && !isIndexing && !initLoading) {
       globalApi.init(timeRange.from, timeRange.to).then(() => startPolling()).catch(console.error);
     }
   }, [backendReady]);
+
+  useEffect(() => {
+    if (!systemActionNotice) return;
+    const timer = window.setTimeout(() => setSystemActionNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [systemActionNotice]);
 
   // 后端未连通时等待
   if (!backendReady) {
@@ -436,6 +644,15 @@ function App() {
             <div className="mb-6 flex items-center gap-2">
               <span className="text-xs font-bold text-[#07c160] bg-[#07c16015] px-3 py-1.5 rounded-full">
                 当前分析范围：{timeRange.label}
+              </span>
+              <span className="text-xs font-bold text-[#1d1d1f] bg-white px-3 py-1.5 rounded-full border border-gray-200">
+                引擎：{mergedRuntimeStatus.engine_type || 'unknown'}
+              </span>
+              <span className="text-xs font-bold text-[#1d1d1f] bg-white px-3 py-1.5 rounded-full border border-gray-200">
+                解密：{mergedRuntimeStatus.decrypt_state || 'unknown'}
+              </span>
+              <span className="text-xs font-bold text-[#1d1d1f] bg-white px-3 py-1.5 rounded-full border border-gray-200">
+                Revision：{String(mergedRuntimeStatus.data_revision ?? '-')}
               </span>
               <button
                 onClick={handleReselect}
@@ -642,6 +859,32 @@ function App() {
             allContacts={allContacts}
             allGroups={allGroups}
           />
+        ) : activeTab === 'system' ? (
+          <SystemRuntimeView
+            backendStatus={backendStatus}
+            runtime={runtime}
+            configCheck={configCheck}
+            changes={runtimeChanges}
+            tasks={runtimeTasks}
+            logs={runtimeLogs}
+            latestEvent={latestEvent}
+            eventsConnected={eventsConnected}
+            loading={runtimeLoading}
+            error={runtimeError}
+            actionNotice={systemActionNotice}
+            meta={runtimeMeta}
+            defaultContactUsername={selectedContact?.username}
+            defaultGroupUsername={selectedGroup?.username}
+            defaultSearchQuery={globalQuery}
+            defaultSearchIncludeMine={globalIncludeMine}
+            onRefresh={() => { void refreshRuntime(); }}
+            onStartDecrypt={(options) => { void handleStartDecrypt(options); }}
+            onStopDecrypt={() => { void handleStopDecrypt(); }}
+            onReindex={() => { void handleReindex(); }}
+            onExportContact={(username, limit) => { void handleExportContact(username, limit); }}
+            onExportGroup={(username, date) => { void handleExportGroup(username, date); }}
+            onExportSearch={(query, includeMine, limit) => { void handleExportSearch(query, includeMine, limit); }}
+          />
         ) : (
           <div>
             <Header title="Database" subtitle="数据库管理" />
@@ -656,6 +899,7 @@ function App() {
         onClose={handleCloseModal}
         initialTab={selectedContactView}
         initialControversyLabel={selectedControversyLabel}
+        refreshKey={mergedRuntimeStatus.data_revision}
         onGroupClick={(g) => { setSelectedContact(null); setSelectedGroup(g); }}
         onBlock={(username) => { addBlockedUser(username); }}
       />

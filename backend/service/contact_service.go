@@ -93,6 +93,10 @@ type ContactService struct {
 	groupDetailMu    sync.RWMutex
 	filterFrom       int64 // 全局时间范围过滤（Unix 秒，0=不限）
 	filterTo         int64
+	reindexQueued    bool
+	reindexRunning   bool
+	onReindexStart   func(from, to int64)
+	onReindexFinish  func(from, to int64)
 }
 
 // 强化的系统话术过滤词库
@@ -197,6 +201,19 @@ func NewContactService(mgr *db.DBManager, cfg *config.Config) *ContactService {
 	return svc
 }
 
+func (s *ContactService) SetReindexHooks(onStart, onFinish func(from, to int64)) {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	s.onReindexStart = onStart
+	s.onReindexFinish = onFinish
+}
+
+func (s *ContactService) GetFilterRange() (int64, int64) {
+	s.cacheMu.RLock()
+	defer s.cacheMu.RUnlock()
+	return s.filterFrom, s.filterTo
+}
+
 func classifyContactKind(c model.Contact) (kind string, isBiz bool, likelyMarketing bool, isLikelyAlt bool) {
 	nameParts := []string{c.Username, c.Remark, c.Nickname, c.Alias, c.Description}
 	joined := strings.ToLower(strings.Join(nameParts, " "))
@@ -258,6 +275,12 @@ func (s *ContactService) Reinitialize(from, to int64) {
 	s.filterFrom = from
 	s.filterTo = to
 	s.isInitialized = false
+	s.reindexQueued = true
+	if s.reindexRunning {
+		s.cacheMu.Unlock()
+		return
+	}
+	s.reindexRunning = true
 	s.isIndexing = true
 	s.cacheMu.Unlock()
 
@@ -267,13 +290,40 @@ func (s *ContactService) Reinitialize(from, to int64) {
 	s.groupDetailMu.Unlock()
 
 	go func() {
-		log.Printf("[INIT] Reinitializing with from=%d to=%d", from, to)
-		s.performAnalysis()
-		s.cacheMu.Lock()
-		s.isIndexing = false
-		s.isInitialized = true
-		s.cacheMu.Unlock()
-		log.Println("[INIT] Reinitialization complete.")
+		for {
+			s.cacheMu.Lock()
+			from = s.filterFrom
+			to = s.filterTo
+			s.reindexQueued = false
+			onStart := s.onReindexStart
+			s.cacheMu.Unlock()
+
+			if onStart != nil {
+				onStart(from, to)
+			}
+
+			log.Printf("[INIT] Reinitializing with from=%d to=%d", from, to)
+			s.performAnalysis()
+
+			s.cacheMu.Lock()
+			queued := s.reindexQueued
+			if !queued {
+				s.isIndexing = false
+				s.isInitialized = true
+				s.reindexRunning = false
+			}
+			onFinish := s.onReindexFinish
+			s.cacheMu.Unlock()
+
+			if onFinish != nil {
+				onFinish(from, to)
+			}
+
+			if !queued {
+				log.Println("[INIT] Reinitialization complete.")
+				return
+			}
+		}
 	}()
 }
 
@@ -330,6 +380,17 @@ func shouldKeepDefaultContact(c model.Contact, deleteFlag int) bool {
 }
 
 func (s *ContactService) loadContactsForAnalysis() []model.Contact {
+	if !s.dbMgr.Ready() {
+		if err := s.dbMgr.Reload(""); err != nil {
+			log.Printf("[INIT] Reload DBManager failed: %v", err)
+			return nil
+		}
+	}
+	if !s.dbMgr.Ready() || s.dbMgr.ContactDB == nil {
+		log.Printf("[INIT] Analysis data not ready yet, skipping analysis round")
+		return nil
+	}
+
 	rows, err := s.dbMgr.ContactDB.Query(
 		"SELECT username, nick_name, remark, alias, flag, COALESCE(description,''), COALESCE(big_head_url,''), COALESCE(small_head_url,''), delete_flag FROM contact WHERE verify_flag=0",
 	)
@@ -409,7 +470,7 @@ func (s *ContactService) performAnalysis() {
 	globalTypeMix := make(map[string]int)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, s.cfg.WorkerCount)
+	sem := make(chan struct{}, maxInt(1, s.cfg.WorkerCount))
 
 	for i := range contacts {
 		wg.Add(1)
@@ -637,7 +698,7 @@ func (s *ContactService) AnalyzeWithFilter(from, to int64) *FilteredStats {
 	globalTypeMix := make(map[string]int)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, s.cfg.WorkerCount)
+	sem := make(chan struct{}, maxInt(1, s.cfg.WorkerCount))
 
 	for i := range contacts {
 		wg.Add(1)
@@ -1462,7 +1523,7 @@ func (s *ContactService) GetGroups() []GroupInfo {
 	result := make([]GroupInfo, 0, len(groups))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, s.cfg.WorkerCount)
+	sem := make(chan struct{}, maxInt(1, s.cfg.WorkerCount))
 
 	for _, g := range groups {
 		wg.Add(1)

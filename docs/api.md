@@ -7,6 +7,8 @@
 ## 目录
 
 - [初始化与状态](#初始化与状态)
+- [统一运行时与实时事件](#统一运行时与实时事件)
+- [ChatLab 导出](#chatlab-导出)
 - [联系人分析](#联系人分析)
 - [关系分析](#关系分析)
 - [群聊分析](#群聊分析)
@@ -18,7 +20,7 @@
 
 ### `POST /api/init`
 
-触发后端重新建立索引，必须在使用其他分析接口前调用。索引在后台异步进行。
+触发后端重新建立索引，必须在使用其他分析接口前调用。索引在后台异步进行。当前语义更接近“手动强制重建”，自动刷新链路检测到 revision 后也会复用同一套分析重建流程。
 
 **请求体**
 
@@ -43,7 +45,7 @@
 
 ### `GET /api/status`
 
-查询索引进度，前端用于轮询判断是否可以开始使用。
+查询兼容态索引进度，旧前端/脚本可继续轮询判断是否可以开始使用；新前端与 MCP 更推荐读取 `/api/system/runtime`。
 
 **响应**
 
@@ -70,6 +72,298 @@
 
 ```json
 { "status": "ok", "db_connected": 5 }
+```
+
+## 统一运行时与实时事件
+
+### `GET /api/system/config-check`
+
+统一配置/目录校验接口。前端系统页与 Docker 排障应先看这个接口，再决定是否可启动同步/解密。
+
+**典型响应**
+
+```json
+{
+  "deployment_target": "docker",
+  "mode": "analysis-only",
+  "analysis_dir": {
+    "path": "/app/analysis-data",
+    "exists": true,
+    "has_contact_db": true,
+    "has_message_db": true
+  },
+  "source_dir": {
+    "path": "/app/source-data",
+    "exists": false,
+    "is_standard_layout": false
+  },
+  "sns": {
+    "detected": true,
+    "ready": true,
+    "db_path": "/app/analysis-data/sns/sns.db"
+  },
+  "suggested_actions": [
+    "prepare_standard_directory",
+    "rebuild_index"
+  ]
+}
+```
+
+关键字段：
+
+- `deployment_target`：`docker` 或 `host`
+- `mode`：当前运行模式（例如 `analysis-only`、`manual-stage`、`external-command`）
+- `analysis_dir/source_dir/work_dir`：目录可用性与契约命中情况
+- `sns`：是否检测到 `sns.db`
+- `suggested_actions`：UI/MCP 可执行建议
+
+### `GET /api/system/runtime`
+
+统一运行时状态接口，前端系统页与 MCP 都优先读取这里。
+
+**典型响应**
+
+```json
+{
+  "engine_type": "windows",
+  "deployment_target": "docker",
+  "decrypt_state": "ready",
+  "is_indexing": false,
+  "is_initialized": true,
+  "total_cached": 312,
+  "data_revision": 5,
+  "pending_changes": 0,
+  "last_decrypt_at": "2026-03-20T03:20:00Z",
+  "last_reindex_at": "2026-03-20T03:20:04Z",
+  "last_message_at": "2026-03-20T03:19:58Z",
+  "last_sns_at": "2026-03-19T21:10:00Z",
+  "last_error": ""
+}
+```
+
+关键字段：
+
+- `engine_type`：当前运行引擎 / 平台
+- `decrypt_state`：`idle/running/stopping/ready/error`
+- `data_revision`：每次成功吸收新数据并完成重建后递增
+- `pending_changes`：已检测到但尚未完全消化的变更数
+- `last_message_at`：最近一条消息时间（若可检测）
+- `last_sns_at`：最近一条朋友圈时间（检测到 `sns.db` 时）
+- `last_error`：最近一次运行时错误
+
+### `GET /api/system/tasks`
+
+返回最近的运行时任务队列，例如解密、内置 stage、reindex。
+
+**Query 参数**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `limit` | `100` | 返回最近任务数量 |
+
+**响应**
+
+```json
+{
+  "items": [
+    {
+      "id": "task-1",
+      "type": "decrypt",
+      "status": "running",
+      "message": "builtin stage started",
+      "started_at": "2026-03-20T03:20:00Z"
+    }
+  ]
+}
+```
+
+### `GET /api/system/logs`
+
+返回运行时日志；可结合任务状态排查平台命令失败、目录错误、自动刷新卡住等问题。
+
+**Query 参数**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `limit` | `200` | 返回日志数量 |
+| `task_id` | 空 | 传入时只返回该任务日志 |
+
+**行为说明**
+
+- 不传 `task_id` 时，返回统一运行时日志（`decrypt` / `sync` / `analysis` 等）的最近记录。
+- 传入 `task_id` 时，只返回该解密任务的 orchestrator 日志，不混入统一运行时日志。
+- `task_id` 日志按产生顺序返回（最早 -> 最晚），不是倒序。
+- `task_id` 日志上的 `limit` 表示“返回最早的前 N 条匹配日志”，不是“最近 N 条”。
+- 若 `task_id` 不存在，返回 `404` 与 `{ "error": "task not found" }`。
+
+**响应**
+
+```json
+{
+  "items": [
+    {
+      "id": 12,
+      "time": "2026-03-20T03:20:01Z",
+      "level": "info",
+      "source": "sync",
+      "message": "detected change revision rev-1",
+      "fields": {
+        "changed_databases": "message_0.db,message_0.db-wal"
+      }
+    }
+  ]
+}
+```
+
+补充说明：
+
+- 统一运行时日志会携带结构化 `fields`，前端可直接做字段筛选或展示。
+- `task_id` 模式下的 orchestrator 日志还会带上 `task_id`、`stream` 等字段。
+
+### `GET /api/system/changes`
+
+返回最近 revision 与同步层摘要，用于判断自动刷新是否已检测到数据库变化。
+
+**Query 参数**
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `since_revision` | 否 | 仅当当前 `data_revision` 大于该值时返回最近日志；同时返回 `has_newer_revision` |
+
+**响应**
+
+```json
+{
+  "data_revision": 5,
+  "pending_changes": 0,
+  "last_reindex_at": "2026-03-20T03:20:04Z",
+  "last_change_reason": "message_0.db,message_0.db-wal",
+  "last_error": "",
+  "items": [
+    {
+      "time": "2026-03-20T03:20:01Z",
+      "level": "info",
+      "source": "sync",
+      "message": "detected change revision rev-1"
+    }
+  ],
+  "sync": {
+    "running": true,
+    "watch_wal": true,
+    "last_revision_seq": 12
+  }
+}
+```
+
+其中：
+
+- `items` 是最近的运行时日志摘要
+- `sync` 是同步层状态快照，便于判断自动刷新是否还在推进
+- `last_revision_seq` 更适合排查 watcher 是否已持续感知到新变化
+
+### `POST /api/system/decrypt/start`
+
+手动启动当前平台解密任务。可带平台、目录、命令覆盖参数。
+
+**请求体（可选字段）**
+
+```json
+{
+  "platform": "windows",
+  "source_data_dir": "C:/wechat/source",
+  "analysis_data_dir": "C:/wechat/analysis",
+  "work_dir": "C:/wechat/workdir",
+  "command": "python decrypt.py --input ${source_data_dir} --output ${analysis_data_dir}",
+  "auto_refresh": true,
+  "wal_enabled": true
+}
+```
+
+**字段补充说明**
+
+- 启动前会复用 `config-check` 校验。
+- 若 `source` 不存在、不是标准目录、`source/analysis` 同目录、`work_dir` 不可写等，返回 `400` + 可执行错误描述。
+- Docker 推荐模式是手动同步标准目录；是否允许启动由当前模式与校验结果共同决定。
+
+**响应**
+
+```json
+{
+  "task_id": "task-1",
+  "status": "started"
+}
+```
+
+### `POST /api/system/decrypt/stop`
+
+手动停止当前运行中的解密任务。
+
+**请求体（可选）**
+
+```json
+{
+  "task_id": "task-1"
+}
+```
+
+若不传 `task_id`，后端会尝试停止当前正在运行的解密任务。
+
+仅 `running` / `stopping` 状态的任务可被停止；若任务已完成或根本不存在，会返回 `400`。
+
+**响应**
+
+```json
+{
+  "task_id": "task-1",
+  "status": "stopping"
+}
+```
+
+### `POST /api/system/reindex`
+
+强制重建索引；当自动刷新已吸收新数据但分析结果未更新时可手动调用。
+
+**请求体**
+
+```json
+{
+  "from": 0,
+  "to": 0
+}
+```
+
+`from` / `to` 继续沿用旧初始化接口的 Unix 秒过滤语义；传 `0` 表示不限。
+
+**响应**
+
+```json
+{ "status": "indexing" }
+```
+
+### `GET /api/events`
+
+SSE 事件流。前端会优先订阅它，在断开时回退轮询。常见事件包括：
+
+- `runtime.revision.detected`
+- `runtime.reindex.started`
+- `runtime.reindex.finished`
+- `runtime.decrypt.started`
+- `runtime.decrypt.finished`
+- `runtime.decrypt.failed`
+
+**SSE 数据格式**
+
+```json
+{
+  "id": 42,
+  "type": "runtime.revision.detected",
+  "at": "2026-03-20T03:20:01Z",
+  "revision": "rev-1",
+  "message": "reindex started",
+  "payload": {
+    "revision": "rev-1"
+  }
+}
 ```
 
 
@@ -525,3 +819,63 @@
 ```
 
 HTTP 状态码：`400` Bad Request / `500` Internal Server Error。
+
+
+## ChatLab 导出
+
+### `GET /api/export/chatlab/contact`
+
+参数：`username`、`limit`、`download`
+
+### `GET /api/export/chatlab/group`
+
+参数：`username`、`date`、`download`
+
+### `GET /api/export/chatlab/search`
+
+参数：`q`、`include_mine`、`limit`、`download`
+
+### `POST /api/export/chatlab`
+
+统一导出入口，`scope` 支持：`contact`、`group`、`search`。
+
+**请求体**
+
+```json
+{
+  "scope": "search",
+  "query": "晚安",
+  "include_mine": "true",
+  "limit": 200
+}
+```
+
+所有导出接口都返回：
+
+```json
+{
+  "file_name": "xxx.chatlab.json",
+  "mime_type": "application/json",
+  "data": { "chatlab": { "version": "0.0.1" } },
+  "summary": {
+    "scope": "search",
+    "query": "晚安",
+    "include_mine": true,
+    "limit": 200,
+    "conversation_name": "搜索结果",
+    "message_count": 42,
+    "member_count": 8
+  }
+}
+```
+
+`summary` 用于前端/MCP 快速确认导出上下文与规模，常见字段包括：
+
+- `scope`
+- `username` / `query`
+- `date`
+- `include_mine`
+- `limit`
+- `conversation_name`
+- `message_count`
+- `member_count`

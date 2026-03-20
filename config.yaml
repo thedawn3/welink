@@ -6,8 +6,12 @@ server:
   port: "8080"
 
 data:
-  # 解密后的微信数据根目录。
-  # 本地开发建议使用相对路径；Docker 场景会由 compose 覆盖为 /app/data。
+  # 解密后的微信数据根目录（分析目录）。
+  # 目录契约：
+  #   contact/contact.db
+  #   message/message_*.db
+  #   sns/sns.db (optional)
+  # Docker 手动同步模式下由 compose 覆盖为 /app/analysis-data。
   dir: "./decrypted"
 
   # 微信媒体资源目录（图片/视频/文件等），可留空。
@@ -24,3 +28,36 @@ analysis:
   late_night_top_n: 20
   default_init_from: 0
   default_init_to: 0
+
+ingest:
+  # Docker 首期默认建议 false（手动同步标准目录）。
+  # 本地原生高级链路可按需开启，并配合 source_data_dir/work_dir 使用。
+  enabled: false
+  source_data_dir: ""
+  work_dir: "./workdir"
+  analysis_data_dir: ""
+  platform: "auto"
+
+sync:
+  enabled: false
+  watch_wal: true
+  debounce_ms: 1000
+  max_wait_ms: 10000
+  event_buffer: 128
+
+decrypt:
+  enabled: false
+  auto_start: false
+  provider: "builtin"
+  # Command templates support:
+  # ${platform} ${source_data_dir} ${analysis_data_dir} ${work_dir} ${auto_refresh} ${wal_enabled}
+  windows_command: ""
+  mac_command: ""
+  linux_command: ""
+  preserve_wal: false
+  task_timeout_seconds: 120
+
+runtime:
+  engine_type: "welink"
+  max_task_records: 200
+  max_log_records: 1000

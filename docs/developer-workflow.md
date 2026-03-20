@@ -44,6 +44,9 @@ cd ../frontend && npm ci && npm run build
 - 关系分析口径
 - MCP 前置依赖
 - 跨平台脚本与排障流程
+- `runtime / ingest / sync` 架构、`/api/system/*`、`/api/events` SSE、ChatLab 导出
+
+涉及统一运行时、自动刷新、MCP 工具收口时，除了更新入口文档，也要补 `docs/changes/relationship-analysis-v2-and-mcp-onboarding.md`。
 
 ## AI 接手入口
 
@@ -65,6 +68,17 @@ WeLink 的 AI 协作入口固定分三层：
 
 - 新增或调整用户可见入口
 - 新增后端 API、前端关键类型字段
+- 调整 system/runtime/SSE/MCP/export 契约
 - 改动 MCP 接入前置顺序
 - 改动启动方式、路径契约、索引流程
 - 改动关系分析算法口径或用户可见文案语义
+
+
+## 集成改动的最低验证
+
+如果改动触及 runtime / ingest / sync / MCP / ChatLab，除常规构建外，建议至少覆盖：
+
+- `cd backend && go test ./...`
+- `cd frontend && npm run build`
+- 若有前端状态或 SSE 交互变化，再补 `cd frontend && npm test`
+- 若有 MCP 契约变化，再确认 `cd mcp-server && go test ./...`

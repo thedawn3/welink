@@ -23,11 +23,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"welink/backend/config"
 	"welink/backend/pkg/db"
 	"welink/backend/pkg/seed"
+	runtimepkg "welink/backend/runtime"
 	"welink/backend/service"
+	syncmgr "welink/backend/sync"
 
 	"github.com/gin-gonic/gin"
 )
@@ -38,22 +41,96 @@ func main() {
 	log.Printf("WeLink config: data_dir=%s msg_dir=%s port=%s timezone=%s workers=%d",
 		cfg.Data.Dir, cfg.Data.MsgDir, cfg.Server.Port, cfg.Analysis.Timezone, cfg.Analysis.WorkerCount)
 
+	analysisDir := cfg.Data.Dir
+	if cfg.Ingest.AnalysisDataDir != "" {
+		analysisDir = cfg.Ingest.AnalysisDataDir
+	}
+
 	// 2. 初始化数据库管理器（WELINK_DEMO_MODE / DEMO_MODE 时先生成示例数据）
 	if isDemoMode() {
-		demoDir := cfg.Data.Dir
+		demoDir := analysisDir
 		log.Printf("[DEMO] Demo mode enabled, generating sample databases in %s", demoDir)
 		if err := seed.Generate(demoDir); err != nil {
 			log.Fatalf("Failed to generate demo databases: %v", err)
 		}
 	}
 
-	dbMgr, err := db.NewDBManager(cfg.Data.Dir)
+	dbMgr, err := db.NewDBManager(analysisDir)
 	if err != nil {
 		log.Fatalf("Init DB failed: %v", err)
 	}
 
 	// 3. 初始化服务层
+	systemRT := newSystemRuntime(cfg)
 	contactSvc := service.NewContactService(dbMgr, cfg)
+	systemRT.reindex = func(from, to int64) {
+		contactSvc.Reinitialize(from, to)
+	}
+	refreshAnalysis := func(stageSource bool, reason string) error {
+		if stageSource {
+			if err := systemRT.stageSourceSnapshot(); err != nil {
+				systemRT.store.UpdateStatus(func(status *runtimepkg.RuntimeStatus) {
+					status.LastError = err.Error()
+				})
+				return err
+			}
+		}
+		if err := dbMgr.Reload(analysisDir); err != nil {
+			systemRT.store.AppendLog("error", "db", err.Error(), nil)
+			systemRT.store.UpdateStatus(func(status *runtimepkg.RuntimeStatus) {
+				status.LastError = err.Error()
+			})
+			return err
+		}
+		systemRT.store.AppendLog("info", "analysis", "refresh scheduled: "+reason, nil)
+		from, to := contactSvc.GetFilterRange()
+		contactSvc.Reinitialize(from, to)
+		return nil
+	}
+	systemRT.onSnapshotReady = func(reason string) error {
+		return refreshAnalysis(false, reason)
+	}
+	systemRT.applyInitialAnalysisStatus(false, false, len(contactSvc.GetCachedStats()))
+	reindexStart, reindexFinish := systemRT.bindReindexHooks(func() int { return len(contactSvc.GetCachedStats()) })
+	contactSvc.SetReindexHooks(reindexStart, reindexFinish)
+
+	syncRoot := analysisDir
+	if systemRT.shouldStageSourceBeforeReindex() {
+		syncRoot = cfg.Ingest.SourceDataDir
+	}
+
+	manager, syncErr := syncmgr.NewManager(syncmgr.ManagerOptions{
+		Root:         syncRoot,
+		Debounce:     time.Duration(cfg.Sync.DebounceMs) * time.Millisecond,
+		PollInterval: time.Duration(maxInt(cfg.Sync.MaxWaitMs/5, 1000)) * time.Millisecond,
+		WatchWAL:     cfg.Sync.WatchWAL,
+		OnRevision: func(revision syncmgr.Revision) {
+			systemRT.onDataRevision(revision, func() {
+				if err := refreshAnalysis(systemRT.shouldStageSourceBeforeReindex(), "sync revision "+revision.ID); err != nil {
+					systemRT.publishEvent("runtime.reindex.failed", map[string]any{
+						"revision": revision.ID,
+						"error":    err.Error(),
+						"message":  err.Error(),
+					})
+				}
+			})
+		},
+		OnError: func(syncErr error) {
+			systemRT.store.AppendLog("error", "sync", syncErr.Error(), nil)
+		},
+	})
+	if syncErr != nil {
+		log.Printf("Failed to initialize sync manager: %v", syncErr)
+	} else {
+		systemRT.syncManager = manager
+		if cfg.Sync.Enabled {
+			if err := manager.Start(); err != nil {
+				log.Printf("Failed to start sync manager: %v", err)
+			}
+		}
+	}
+
+	systemRT.startConfiguredDecrypt()
 
 	// 4. 初始化 Gin 路由
 	r := gin.Default()
@@ -81,19 +158,30 @@ func main() {
 
 	api := r.Group("/api")
 	{
+		systemRT.registerRoutes(api)
+		withAnalysisData := func(handler gin.HandlerFunc) gin.HandlerFunc {
+			return func(c *gin.Context) {
+				if !dbMgr.Ready() {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": "analysis data not ready"})
+					return
+				}
+				handler(c)
+			}
+		}
+
 		// 极速获取缓存后的统计信息
-		api.GET("/contacts/stats", func(c *gin.Context) {
+		api.GET("/contacts/stats", withAnalysisData(func(c *gin.Context) {
 			stats := contactSvc.GetCachedStats()
 			c.JSON(http.StatusOK, stats)
-		})
+		}))
 
 		// 获取全局统计数据
-		api.GET("/global", func(c *gin.Context) {
+		api.GET("/global", withAnalysisData(func(c *gin.Context) {
 			c.JSON(http.StatusOK, contactSvc.GetGlobal())
-		})
+		}))
 
 		// 获取词云数据
-		api.GET("/contacts/wordcloud", func(c *gin.Context) {
+		api.GET("/contacts/wordcloud", withAnalysisData(func(c *gin.Context) {
 			uname := c.Query("username")
 			if uname == "" {
 				c.JSON(400, gin.H{"error": "username required"})
@@ -101,15 +189,15 @@ func main() {
 			}
 			includeMine := c.Query("include_mine") == "true"
 			c.JSON(http.StatusOK, contactSvc.GetWordCloud(uname, includeMine))
-		})
+		}))
 
 		// 群聊列表
-		api.GET("/groups", func(c *gin.Context) {
+		api.GET("/groups", withAnalysisData(func(c *gin.Context) {
 			c.JSON(http.StatusOK, contactSvc.GetGroups())
-		})
+		}))
 
 		// 群聊某天聊天记录
-		api.GET("/groups/messages", func(c *gin.Context) {
+		api.GET("/groups/messages", withAnalysisData(func(c *gin.Context) {
 			uname := c.Query("username")
 			date := c.Query("date")
 			if uname == "" || date == "" {
@@ -117,70 +205,70 @@ func main() {
 				return
 			}
 			c.JSON(http.StatusOK, contactSvc.GetGroupDayMessages(uname, date))
-		})
+		}))
 
 		// 群聊深度画像
-		api.GET("/groups/detail", func(c *gin.Context) {
+		api.GET("/groups/detail", withAnalysisData(func(c *gin.Context) {
 			uname := c.Query("username")
 			if uname == "" {
 				c.JSON(400, gin.H{"error": "username required"})
 				return
 			}
 			c.JSON(http.StatusOK, contactSvc.GetGroupDetail(uname))
-		})
+		}))
 
 		// 获取与联系人的共同群聊
-		api.GET("/contacts/common-groups", func(c *gin.Context) {
+		api.GET("/contacts/common-groups", withAnalysisData(func(c *gin.Context) {
 			uname := c.Query("username")
 			if uname == "" {
 				c.JSON(400, gin.H{"error": "username required"})
 				return
 			}
 			c.JSON(http.StatusOK, contactSvc.GetCommonGroups(uname))
-		})
+		}))
 
 		// 获取联系人深度分析（小时/周/日历/深夜/红包/主动率）
-		api.GET("/contacts/detail", func(c *gin.Context) {
+		api.GET("/contacts/detail", withAnalysisData(func(c *gin.Context) {
 			uname := c.Query("username")
 			if uname == "" {
 				c.JSON(400, gin.H{"error": "username required"})
 				return
 			}
 			c.JSON(http.StatusOK, contactSvc.GetContactDetail(uname))
-		})
+		}))
 
 		// 关系变化榜
-		api.GET("/relations/overview", func(c *gin.Context) {
+		api.GET("/relations/overview", withAnalysisData(func(c *gin.Context) {
 			c.JSON(http.StatusOK, contactSvc.GetRelationOverview())
-		})
+		}))
 
 		// 联系人关系档案
-		api.GET("/relations/detail", func(c *gin.Context) {
+		api.GET("/relations/detail", withAnalysisData(func(c *gin.Context) {
 			uname := c.Query("username")
 			if uname == "" {
 				c.JSON(400, gin.H{"error": "username required"})
 				return
 			}
 			c.JSON(http.StatusOK, contactSvc.GetRelationDetail(uname))
-		})
+		}))
 
 		// 争议榜单
-		api.GET("/controversy/overview", func(c *gin.Context) {
+		api.GET("/controversy/overview", withAnalysisData(func(c *gin.Context) {
 			c.JSON(http.StatusOK, contactSvc.GetControversyOverview())
-		})
+		}))
 
 		// 联系人争议详情
-		api.GET("/controversy/detail", func(c *gin.Context) {
+		api.GET("/controversy/detail", withAnalysisData(func(c *gin.Context) {
 			uname := c.Query("username")
 			if uname == "" {
 				c.JSON(400, gin.H{"error": "username required"})
 				return
 			}
 			c.JSON(http.StatusOK, contactSvc.GetControversyDetail(uname))
-		})
+		}))
 
 		// 某天的聊天记录（日历点击）
-		api.GET("/contacts/messages", func(c *gin.Context) {
+		api.GET("/contacts/messages", withAnalysisData(func(c *gin.Context) {
 			uname := c.Query("username")
 			date := c.Query("date") // "2024-03-15"
 			if uname == "" || date == "" {
@@ -188,10 +276,10 @@ func main() {
 				return
 			}
 			c.JSON(http.StatusOK, contactSvc.GetDayMessages(uname, date))
-		})
+		}))
 
 		// 联系人历史聊天时间线
-		api.GET("/contacts/messages/history", func(c *gin.Context) {
+		api.GET("/contacts/messages/history", withAnalysisData(func(c *gin.Context) {
 			uname := c.Query("username")
 			if uname == "" {
 				c.JSON(400, gin.H{"error": "username required"})
@@ -214,10 +302,10 @@ func main() {
 				}
 			}
 			c.JSON(http.StatusOK, contactSvc.GetMessageHistory(uname, before, limit))
-		})
+		}))
 
 		// 搜索联系人聊天记录
-		api.GET("/contacts/search", func(c *gin.Context) {
+		api.GET("/contacts/search", withAnalysisData(func(c *gin.Context) {
 			uname := c.Query("username")
 			q := c.Query("q")
 			if uname == "" || q == "" {
@@ -226,10 +314,10 @@ func main() {
 			}
 			includeMine := c.Query("include_mine") == "true"
 			c.JSON(http.StatusOK, contactSvc.SearchMessages(uname, q, includeMine))
-		})
+		}))
 
 		// 全量搜索聊天记录
-		api.GET("/search/messages", func(c *gin.Context) {
+		api.GET("/search/messages", withAnalysisData(func(c *gin.Context) {
 			q := c.Query("q")
 			if q == "" {
 				c.JSON(400, gin.H{"error": "q required"})
@@ -241,10 +329,10 @@ func main() {
 				limit = 200
 			}
 			c.JSON(http.StatusOK, contactSvc.SearchAllMessages(q, includeMine, limit))
-		})
+		}))
 
 		// 某月的文本消息（情感分析详情）
-		api.GET("/contacts/messages/month", func(c *gin.Context) {
+		api.GET("/contacts/messages/month", withAnalysisData(func(c *gin.Context) {
 			uname := c.Query("username")
 			month := c.Query("month") // "2024-03"
 			if uname == "" || month == "" {
@@ -253,10 +341,10 @@ func main() {
 			}
 			includeMine := c.Query("include_mine") == "true"
 			c.JSON(http.StatusOK, contactSvc.GetMonthMessages(uname, month, includeMine))
-		})
+		}))
 
 		// 情感分析
-		api.GET("/contacts/sentiment", func(c *gin.Context) {
+		api.GET("/contacts/sentiment", withAnalysisData(func(c *gin.Context) {
 			uname := c.Query("username")
 			if uname == "" {
 				c.JSON(400, gin.H{"error": "username required"})
@@ -264,10 +352,10 @@ func main() {
 			}
 			includeMine := c.Query("include_mine") == "true"
 			c.JSON(http.StatusOK, contactSvc.GetSentimentAnalysis(uname, includeMine))
-		})
+		}))
 
 		// 时间范围过滤统计（from/to 为 Unix 秒时间戳）
-		api.GET("/stats/filter", func(c *gin.Context) {
+		api.GET("/stats/filter", withAnalysisData(func(c *gin.Context) {
 			var from, to int64
 			fmt.Sscanf(c.Query("from"), "%d", &from)
 			fmt.Sscanf(c.Query("to"), "%d", &to)
@@ -277,7 +365,7 @@ func main() {
 				return
 			}
 			c.JSON(http.StatusOK, result)
-		})
+		}))
 
 		// 获取数据库管理信息
 		api.GET("/databases", func(c *gin.Context) {
@@ -346,13 +434,15 @@ func main() {
 
 		// 获取后端索引状态
 		api.GET("/status", func(c *gin.Context) {
-			c.JSON(200, contactSvc.GetStatus())
+			c.JSON(200, systemRT.store.Status())
 		})
 
 		// 健康检查
 		api.GET("/health", func(c *gin.Context) {
-			c.JSON(200, gin.H{"status": "ok", "db_connected": len(dbMgr.MessageDBs)})
+			c.JSON(200, gin.H{"status": "ok", "db_connected": len(dbMgr.MessageDBs), "analysis_dir": analysisDir})
 		})
+
+		registerExportRoutes(api, contactSvc, func() bool { return dbMgr.Ready() })
 
 		// OpenAPI 规范
 		api.GET("/swagger.json", func(c *gin.Context) {
@@ -386,4 +476,11 @@ func resolveConfigPath() string {
 
 func isDemoMode() bool {
 	return os.Getenv("WELINK_DEMO_MODE") == "true" || os.Getenv("DEMO_MODE") == "true"
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

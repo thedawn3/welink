@@ -1,75 +1,110 @@
-# 数据目录与故障排查
+# 数据目录契约与排障
 
-## 目录契约
+## 1. 标准目录契约
 
-WeLink 只认一套标准输入：
+WeLink 消费的标准目录如下：
 
 ```text
-<DATA_DIR>/
+<STANDARD_DIR>/
 ├── contact/contact.db
-└── message/message_*.db
+├── message/message_*.db
+└── sns/sns.db                 # optional
 ```
 
-可选媒体目录：
+说明：
 
-```text
-<MSG_DIR>/
-├── image2/
-├── video/
-└── ...
-```
+- `contact/contact.db` 与 `message/message_*.db` 为必需
+- `sns/sns.db` 为可选，但会参与目录校验与状态展示
+- 目录可来自任意容器外工具，WeLink 只负责消费标准结构
 
-## .env 变量
+## 2. 关键环境变量
 
 ```env
-WELINK_DATA_DIR=/absolute/path/to/decrypted
+WELINK_ANALYSIS_DATA_DIR=/absolute/path/to/standard_dir
+WELINK_DATA_DIR=/absolute/path/to/standard_dir
+WELINK_SOURCE_DATA_DIR=
+WELINK_WORK_DIR=./.tmp/welink-workdir
 WELINK_MSG_DIR=/absolute/path/to/msg
-WELINK_BACKEND_PORT=8080
-WELINK_FRONTEND_PORT=3000
 ```
 
-`WELINK_DATA_DIR` 必填；`WELINK_MSG_DIR` 可为空。
+Docker 首期推荐：
 
-## 启动前校验
+```env
+WELINK_MODE=analysis-only
+WELINK_INGEST_ENABLED=false
+WELINK_DECRYPT_ENABLED=false
+WELINK_DECRYPT_AUTO_START=false
+WELINK_SYNC_ENABLED=false
+```
+
+含义：
+
+- `WELINK_ANALYSIS_DATA_DIR`: 分析读取目录（核心）
+- `WELINK_SOURCE_DATA_DIR`: ingest/decrypt 读取目录；Docker 手动同步模式建议留空
+- `WELINK_WORK_DIR`: stage 临时目录（可写）
+- `WELINK_MSG_DIR`: 媒体目录（可选）
+
+## 3. 常见错误与修复
+
+### `source` 指向了原始 `xwechat_files` 根目录
+
+症状：启动同步/解密时报 `no contact/message databases found under /app/source-data`。
+
+修复：
+
+1. 容器外先整理为标准目录（`contact/message`，可选 `sns`）
+2. 将标准目录配置到 `WELINK_ANALYSIS_DATA_DIR`
+3. Docker 手动同步模式下保持 `WELINK_SOURCE_DATA_DIR=`（空）
+
+### source 与 analysis 指向同一目录
+
+症状：运行时校验失败、同步链路异常或目录污染。
+
+修复：
+
+- 分离 source / analysis
+- 或直接采用 Docker 手动同步模式（source 为空，占位挂载）
+
+### 媒体目录不存在
+
+不会阻塞联系人/关系/关键词分析，只影响图片/视频等媒体回溯。
+
+## 4. 推荐排障顺序
+
+固定顺序：
+
+1. `GET /api/system/config-check`
+2. `GET /api/system/runtime`
+3. `GET /api/system/logs`
+4. 必要时 `POST /api/system/decrypt/start`
+5. 必要时 `POST /api/system/reindex`
+
+示例：
 
 ```bash
-./scripts/welink-doctor.sh --write-env
+curl http://localhost:8080/api/system/config-check
+curl http://localhost:8080/api/system/runtime
+curl http://localhost:8080/api/system/logs
+curl -X POST http://localhost:8080/api/system/reindex
 ```
 
-或 PowerShell：
+重点字段：
 
-```powershell
-.\scripts\welink-doctor.ps1 -WriteEnv
-```
+- `deployment_target`
+- `mode`
+- `last_error`
+- `last_message_at`
+- `last_sns_at`
+- `pending_changes`
 
-## 常见问题
+## 5. 自动刷新与 Docker 的边界
 
-### `contact/contact.db` 不存在
+当前 Docker 正式路径是手动同步标准目录，不依赖容器内 watcher 自动刷新。
 
-说明解密产物目录不对，或你传入的是上层目录/错误目录。
+建议流程：
 
-### `message/message_*.db` 不存在
+1. 容器外脚本更新标准目录（`contact/message/sns`）
+2. WeLink 执行校验
+3. 手动同步/重建索引并观察 runtime
 
-说明消息库没有解密成功，或当前目录只有联系人库。
-
-### 前端能打开但消息为空
-
-先看：
-
-```bash
-curl http://localhost:8080/api/status
-```
-
-若你改了 `.env` 里的 `WELINK_BACKEND_PORT`，把这里的 `8080` 替换成实际端口。
-
-若还没初始化完成，先等待索引结束。
-
-如果你已经接了 MCP / AI，也一样要等索引结束；否则 AI 看到的数据会为空或不完整。
-
-### 电脑微信里看不到完整历史
-
-这是导入问题，不是 WeLink 或解密问题。先在微信客户端确认历史是否已同步完整。
-
-### 媒体目录缺失
-
-不会影响联系人统计、关系分析、关键词搜索；只影响静态媒体回溯。
+如果你需要完整自动刷新 watcher，优先在本地原生模式使用。

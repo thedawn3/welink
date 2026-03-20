@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -13,6 +14,12 @@ import (
 func mockServer(responses map[string]string) *Server {
 	return &Server{
 		fetch: func(path string, params map[string]string) (string, error) {
+			if v, ok := responses[path]; ok {
+				return v, nil
+			}
+			return `{}`, nil
+		},
+		postFn: func(path string, body map[string]any) (string, error) {
 			if v, ok := responses[path]; ok {
 				return v, nil
 			}
@@ -53,6 +60,11 @@ func TestFormatJSON_Invalid(t *testing.T) {
 // ─── callTool ─────────────────────────────────────────────────────────
 
 func args(m map[string]string) json.RawMessage {
+	b, _ := json.Marshal(m)
+	return b
+}
+
+func argsAny(m map[string]any) json.RawMessage {
 	b, _ := json.Marshal(m)
 	return b
 }
@@ -204,6 +216,332 @@ func TestCallTool_BadArgs(t *testing.T) {
 	}
 }
 
+func TestCallTool_GetRuntimeStatus_OK(t *testing.T) {
+	srv := mockServer(map[string]string{
+		"/api/system/runtime": `{"engine_type":"windows","data_revision":3}`,
+	})
+	r := srv.callTool("get_runtime_status", nil)
+	if r.IsError {
+		t.Fatalf("unexpected error: %v", r.Content[0].Text)
+	}
+	if !strings.Contains(r.Content[0].Text, "engine_type") {
+		t.Fatalf("expected runtime status in response, got: %s", r.Content[0].Text)
+	}
+}
+
+func TestCallTool_GetRuntimeStatus_MissingEndpoint(t *testing.T) {
+	srv := mockServer(map[string]string{
+		"/api/system/runtime": "404 page not found",
+	})
+	r := srv.callTool("get_runtime_status", nil)
+	if !r.IsError {
+		t.Fatal("expected missing runtime endpoint error")
+	}
+	if !strings.Contains(r.Content[0].Text, "/api/system/runtime") {
+		t.Fatalf("unexpected error text: %s", r.Content[0].Text)
+	}
+}
+
+func TestCallTool_StartDecrypt_MissingEndpoint(t *testing.T) {
+	srv := mockServer(map[string]string{
+		"/api/system/decrypt/start": "404 page not found",
+	})
+	r := srv.callTool("start_decrypt", argsAny(map[string]any{"platform": "windows"}))
+	if !r.IsError {
+		t.Fatal("expected missing endpoint error")
+	}
+}
+
+func TestCallTool_StopDecrypt_OK(t *testing.T) {
+	srv := mockServer(map[string]string{
+		"/api/system/decrypt/stop": `{"status":"stopped"}`,
+	})
+	r := srv.callTool("stop_decrypt", nil)
+	if r.IsError {
+		t.Fatalf("unexpected error: %v", r.Content[0].Text)
+	}
+}
+
+func TestCallTool_RebuildIndex_OK(t *testing.T) {
+	var (
+		gotPath string
+		gotBody map[string]any
+	)
+	srv := &Server{
+		postFn: func(path string, body map[string]any) (string, error) {
+			gotPath = path
+			gotBody = body
+			return `{"status":"indexing"}`, nil
+		},
+	}
+	r := srv.callTool("rebuild_index", argsAny(map[string]any{"from": "0", "to": "0"}))
+	if r.IsError {
+		t.Fatalf("unexpected error: %v", r.Content[0].Text)
+	}
+	if gotPath != "/api/system/reindex" {
+		t.Fatalf("expected /api/system/reindex, got %s", gotPath)
+	}
+	if from, ok := gotBody["from"].(int64); !ok || from != 0 {
+		t.Fatalf("unexpected from payload: %#v", gotBody["from"])
+	}
+	if to, ok := gotBody["to"].(int64); !ok || to != 0 {
+		t.Fatalf("unexpected to payload: %#v", gotBody["to"])
+	}
+}
+
+func TestCallTool_RebuildIndex_MissingEndpoint(t *testing.T) {
+	srv := mockServer(map[string]string{
+		"/api/system/reindex": "404 page not found",
+	})
+	r := srv.callTool("rebuild_index", argsAny(map[string]any{"from": "0", "to": "0"}))
+	if !r.IsError {
+		t.Fatal("expected missing reindex endpoint error")
+	}
+	if !strings.Contains(r.Content[0].Text, "/api/system/reindex") {
+		t.Fatalf("unexpected error text: %s", r.Content[0].Text)
+	}
+}
+
+func TestCallTool_GetRecentChanges_OK(t *testing.T) {
+	var gotParams map[string]string
+	srv := &Server{
+		fetch: func(path string, params map[string]string) (string, error) {
+			if path != "/api/system/changes" {
+				t.Fatalf("unexpected path: %s", path)
+			}
+			gotParams = params
+			return `{"data_revision":9,"pending_changes":0}`, nil
+		},
+	}
+	r := srv.callTool("get_recent_changes", argsAny(map[string]any{"since_revision": "8"}))
+	if r.IsError {
+		t.Fatalf("unexpected error: %v", r.Content[0].Text)
+	}
+	if gotParams["since_revision"] != "8" {
+		t.Fatalf("unexpected since_revision params: %#v", gotParams)
+	}
+}
+
+func TestCallTool_GetRecentChanges_MissingEndpoint(t *testing.T) {
+	srv := mockServer(map[string]string{
+		"/api/system/changes": "404 page not found",
+	})
+	r := srv.callTool("get_recent_changes", nil)
+	if !r.IsError {
+		t.Fatal("expected missing changes endpoint error")
+	}
+	if !strings.Contains(r.Content[0].Text, "/api/system/changes") {
+		t.Fatalf("unexpected error text: %s", r.Content[0].Text)
+	}
+}
+
+func TestCallTool_ExportChatLab_MissingScope(t *testing.T) {
+	srv := mockServer(nil)
+	r := srv.callTool("export_chatlab", argsAny(map[string]any{}))
+	if !r.IsError {
+		t.Fatal("expected missing scope error")
+	}
+}
+
+func TestCallTool_ExportChatLab_OK(t *testing.T) {
+	var (
+		gotPath   string
+		gotParams map[string]string
+	)
+	srv := &Server{
+		fetch: func(path string, params map[string]string) (string, error) {
+			gotPath = path
+			gotParams = params
+			return `{"status":"ok","format":"chatlab"}`, nil
+		},
+	}
+	r := srv.callTool("export_chatlab", argsAny(map[string]any{"scope": "contact", "username": "wxid_xxx", "limit": "20"}))
+	if r.IsError {
+		t.Fatalf("unexpected error: %v", r.Content[0].Text)
+	}
+	if gotPath != "/api/export/chatlab/contact" {
+		t.Fatalf("unexpected export endpoint: %s", gotPath)
+	}
+	if gotParams["username"] != "wxid_xxx" || gotParams["limit"] != "20" {
+		t.Fatalf("unexpected params: %#v", gotParams)
+	}
+}
+
+func TestCallTool_ExportChatLab_SearchRoute(t *testing.T) {
+	var (
+		gotPath   string
+		gotParams map[string]string
+	)
+	srv := &Server{
+		fetch: func(path string, params map[string]string) (string, error) {
+			gotPath = path
+			gotParams = params
+			return `{"status":"ok","format":"chatlab"}`, nil
+		},
+	}
+	r := srv.callTool("export_chatlab", argsAny(map[string]any{"scope": "search", "query": "hello", "include_mine": true}))
+	if r.IsError {
+		t.Fatalf("unexpected error: %v", r.Content[0].Text)
+	}
+	if gotPath != "/api/export/chatlab/search" {
+		t.Fatalf("unexpected export endpoint: %s", gotPath)
+	}
+	if gotParams["q"] != "hello" || gotParams["include_mine"] != "true" {
+		t.Fatalf("unexpected params: %#v", gotParams)
+	}
+}
+
+func TestCallTool_ExportChatLab_GroupRoute(t *testing.T) {
+	var (
+		gotPath   string
+		gotParams map[string]string
+	)
+	srv := &Server{
+		fetch: func(path string, params map[string]string) (string, error) {
+			gotPath = path
+			gotParams = params
+			return `{"status":"ok","format":"chatlab"}`, nil
+		},
+	}
+	r := srv.callTool("export_chatlab", argsAny(map[string]any{
+		"scope":    "group",
+		"username": "room@chatroom",
+		"date":     "2025-01-01",
+	}))
+	if r.IsError {
+		t.Fatalf("unexpected error: %v", r.Content[0].Text)
+	}
+	if gotPath != "/api/export/chatlab/group" {
+		t.Fatalf("unexpected export endpoint: %s", gotPath)
+	}
+	if gotParams["username"] != "room@chatroom" || gotParams["date"] != "2025-01-01" {
+		t.Fatalf("unexpected params: %#v", gotParams)
+	}
+}
+
+func TestCallTool_ExportChatLab_ContactMissingUsername(t *testing.T) {
+	srv := mockServer(nil)
+	r := srv.callTool("export_chatlab", argsAny(map[string]any{"scope": "contact"}))
+	if !r.IsError {
+		t.Fatal("expected missing username error for contact scope")
+	}
+}
+
+func TestCallTool_ExportChatLab_GroupMissingUsername(t *testing.T) {
+	srv := mockServer(nil)
+	r := srv.callTool("export_chatlab", argsAny(map[string]any{"scope": "group"}))
+	if !r.IsError {
+		t.Fatal("expected missing username error for group scope")
+	}
+}
+
+func TestCallTool_ExportChatLab_SearchMissingQuery(t *testing.T) {
+	srv := mockServer(nil)
+	r := srv.callTool("export_chatlab", argsAny(map[string]any{"scope": "search"}))
+	if !r.IsError {
+		t.Fatal("expected missing query error for search scope")
+	}
+}
+
+func TestCallTool_ExportChatLab_MissingEndpoint(t *testing.T) {
+	srv := mockServer(map[string]string{
+		"/api/export/chatlab/contact": "404 page not found",
+	})
+	r := srv.callTool("export_chatlab", argsAny(map[string]any{"scope": "contact", "username": "wxid_xxx"}))
+	if !r.IsError {
+		t.Fatal("expected missing export endpoint error")
+	}
+	if !strings.Contains(r.Content[0].Text, "ChatLab 导出接口") {
+		t.Fatalf("unexpected error text: %s", r.Content[0].Text)
+	}
+}
+
+func TestCallTool_ExportChatLab_SearchAliasQ(t *testing.T) {
+	var gotParams map[string]string
+	srv := &Server{
+		fetch: func(path string, params map[string]string) (string, error) {
+			gotParams = params
+			return `{"status":"ok","format":"chatlab"}`, nil
+		},
+	}
+	r := srv.callTool("export_chatlab", argsAny(map[string]any{"scope": "search", "q": "keyword"}))
+	if r.IsError {
+		t.Fatalf("unexpected error: %v", r.Content[0].Text)
+	}
+	if gotParams["q"] != "keyword" {
+		t.Fatalf("expected q alias in params, got %#v", gotParams)
+	}
+}
+
+func TestBuildDecryptPayload_PreservesBoolFields(t *testing.T) {
+	payload := buildDecryptPayload(map[string]any{
+		"platform":     "windows",
+		"auto_refresh": true,
+		"wal_enabled":  "false",
+	})
+	if payload["platform"] != "windows" {
+		t.Fatalf("unexpected platform payload: %#v", payload)
+	}
+	if value, ok := payload["auto_refresh"].(bool); !ok || !value {
+		t.Fatalf("expected auto_refresh bool true, got %#v", payload["auto_refresh"])
+	}
+	if value, ok := payload["wal_enabled"].(bool); !ok || value {
+		t.Fatalf("expected wal_enabled bool false, got %#v", payload["wal_enabled"])
+	}
+}
+
+func TestCallTool_StartDecrypt_PayloadAlignedWithBackendContract(t *testing.T) {
+	var (
+		gotPath string
+		gotBody map[string]any
+	)
+	srv := &Server{
+		postFn: func(path string, body map[string]any) (string, error) {
+			gotPath = path
+			gotBody = body
+			return `{"status":"running"}`, nil
+		},
+	}
+	r := srv.callTool("start_decrypt", argsAny(map[string]any{
+		"command":           "python run.py",
+		"source_data_dir":   "/tmp/src",
+		"work_dir":          "/tmp/work",
+		"analysis_data_dir": "/tmp/analysis",
+		"platform":          "windows",
+		"auto_refresh":      "true",
+		"wal_enabled":       false,
+		"legacy_path":       "/tmp/legacy",
+	}))
+	if r.IsError {
+		t.Fatalf("unexpected error: %v", r.Content[0].Text)
+	}
+	if gotPath != "/api/system/decrypt/start" {
+		t.Fatalf("unexpected decrypt start endpoint: %s", gotPath)
+	}
+	for _, key := range []string{
+		"command",
+		"source_data_dir",
+		"work_dir",
+		"analysis_data_dir",
+		"platform",
+		"auto_refresh",
+		"wal_enabled",
+	} {
+		if _, ok := gotBody[key]; !ok {
+			t.Fatalf("missing key %s in payload: %#v", key, gotBody)
+		}
+	}
+	if _, ok := gotBody["legacy_path"]; ok {
+		t.Fatalf("unexpected legacy key in payload: %#v", gotBody)
+	}
+	if value, ok := gotBody["auto_refresh"].(bool); !ok || !value {
+		t.Fatalf("expected auto_refresh bool true, got %#v", gotBody["auto_refresh"])
+	}
+	if value, ok := gotBody["wal_enabled"].(bool); !ok || value {
+		t.Fatalf("expected wal_enabled bool false, got %#v", gotBody["wal_enabled"])
+	}
+}
+
 // ─── handle ──────────────────────────────────────────────────────────
 
 func toRaw(v any) json.RawMessage {
@@ -324,6 +662,33 @@ func TestApiGetWithClient_ServerError(t *testing.T) {
 func TestApiGetWithClient_ConnectionRefused(t *testing.T) {
 	client := &http.Client{}
 	_, err := apiGetWithClient(client, "http://127.0.0.1:1", "/api/test", nil)
+	if err == nil {
+		t.Error("expected connection error")
+	}
+}
+
+func TestApiPostWithClient_OK(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST, got %s", r.Method)
+		}
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer ts.Close()
+
+	client := &http.Client{}
+	result, err := apiPostWithClient(client, ts.URL, "/api/test", map[string]any{"foo": "bar"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == "" {
+		t.Error("expected non-empty result")
+	}
+}
+
+func TestApiPostWithClient_ConnectionRefused(t *testing.T) {
+	client := &http.Client{}
+	_, err := apiPostWithClient(client, "http://127.0.0.1:1", "/api/test", map[string]any{})
 	if err == nil {
 		t.Error("expected connection error")
 	}

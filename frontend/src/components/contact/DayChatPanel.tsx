@@ -12,11 +12,12 @@ interface DayChatPanelProps {
   date: string;       // "2024-03-15"
   dayCount: number;   // 当天消息数
   contactName: string;
+  refreshKey?: string | number;
   onClose: () => void;
 }
 
 export const DayChatPanel: React.FC<DayChatPanelProps> = ({
-  username, date, dayCount, contactName, onClose,
+  username, date, dayCount, contactName, refreshKey, onClose,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,7 +29,7 @@ export const DayChatPanel: React.FC<DayChatPanelProps> = ({
       .then(data => setMessages(data ?? []))
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [username, date]);
+  }, [username, date, refreshKey]);
 
   useEffect(() => {
     if (!loading) {

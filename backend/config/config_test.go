@@ -66,3 +66,73 @@ func TestLoadEnvOverridesYaml(t *testing.T) {
 		t.Fatalf("expected env port to override yaml, got %q", cfg.Server.Port)
 	}
 }
+
+func TestLoadSupportsRuntimeAndIngestEnv(t *testing.T) {
+	t.Setenv("WELINK_INGEST_ENABLED", "true")
+	t.Setenv("WELINK_SOURCE_DATA_DIR", "/tmp/source")
+	t.Setenv("WELINK_WORK_DIR", "/tmp/work")
+	t.Setenv("WELINK_ANALYSIS_DATA_DIR", "/tmp/analysis")
+	t.Setenv("WELINK_PLATFORM", "windows")
+	t.Setenv("WELINK_SYNC_ENABLED", "true")
+	t.Setenv("WELINK_SYNC_WATCH_WAL", "false")
+	t.Setenv("WELINK_SYNC_DEBOUNCE_MS", "250")
+	t.Setenv("WELINK_SYNC_MAX_WAIT_MS", "1200")
+	t.Setenv("WELINK_SYNC_EVENT_BUFFER", "64")
+	t.Setenv("WELINK_DECRYPT_ENABLED", "true")
+	t.Setenv("WELINK_DECRYPT_AUTO_START", "true")
+	t.Setenv("WELINK_DECRYPT_PROVIDER", "builtin")
+	t.Setenv("WELINK_DECRYPT_PRESERVE_WAL", "true")
+	t.Setenv("WELINK_DECRYPT_TIMEOUT_SECONDS", "90")
+	t.Setenv("WELINK_RUNTIME_ENGINE_TYPE", "hybrid")
+	t.Setenv("WELINK_RUNTIME_MAX_TASK_RECORDS", "50")
+	t.Setenv("WELINK_RUNTIME_MAX_LOG_RECORDS", "500")
+
+	cfg := Load("/path/that/does/not/exist.yaml")
+	if !cfg.Ingest.Enabled {
+		t.Fatalf("expected ingest enabled")
+	}
+	if cfg.Ingest.SourceDataDir != "/tmp/source" {
+		t.Fatalf("expected source data dir, got %q", cfg.Ingest.SourceDataDir)
+	}
+	if cfg.Ingest.WorkDir != "/tmp/work" {
+		t.Fatalf("expected work dir, got %q", cfg.Ingest.WorkDir)
+	}
+	if cfg.Ingest.AnalysisDataDir != "/tmp/analysis" {
+		t.Fatalf("expected analysis data dir, got %q", cfg.Ingest.AnalysisDataDir)
+	}
+	if cfg.Ingest.Platform != "windows" {
+		t.Fatalf("expected platform windows, got %q", cfg.Ingest.Platform)
+	}
+	if !cfg.Sync.Enabled || cfg.Sync.WatchWAL {
+		t.Fatalf("unexpected sync config: %+v", cfg.Sync)
+	}
+	if cfg.Sync.DebounceMs != 250 || cfg.Sync.MaxWaitMs != 1200 || cfg.Sync.EventBuffer != 64 {
+		t.Fatalf("unexpected sync values: %+v", cfg.Sync)
+	}
+	if !cfg.Decrypt.Enabled || !cfg.Decrypt.AutoStart || !cfg.Decrypt.PreserveWAL {
+		t.Fatalf("unexpected decrypt config: %+v", cfg.Decrypt)
+	}
+	if cfg.Decrypt.TaskTimeoutSeconds != 90 {
+		t.Fatalf("expected decrypt timeout 90, got %d", cfg.Decrypt.TaskTimeoutSeconds)
+	}
+	if cfg.Runtime.EngineType != "hybrid" {
+		t.Fatalf("expected runtime engine type hybrid, got %q", cfg.Runtime.EngineType)
+	}
+	if cfg.Runtime.MaxTaskRecords != 50 || cfg.Runtime.MaxLogRecords != 500 {
+		t.Fatalf("unexpected runtime limits: %+v", cfg.Runtime)
+	}
+}
+
+func TestLoadFallsBackAnalysisDataDirToDataDir(t *testing.T) {
+	t.Setenv("WELINK_DATA_DIR", "/tmp/data")
+	t.Setenv("WELINK_ANALYSIS_DATA_DIR", "")
+	t.Setenv("WELINK_SOURCE_DATA_DIR", "")
+
+	cfg := Load("/path/that/does/not/exist.yaml")
+	if cfg.Ingest.SourceDataDir != "/tmp/data" {
+		t.Fatalf("expected source dir fallback to data dir, got %q", cfg.Ingest.SourceDataDir)
+	}
+	if cfg.Ingest.AnalysisDataDir != "/tmp/data" {
+		t.Fatalf("expected analysis dir fallback to data dir, got %q", cfg.Ingest.AnalysisDataDir)
+	}
+}

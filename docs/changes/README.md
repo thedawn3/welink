@@ -88,4 +88,4 @@
 
 | 文档 | 说明 |
 |---|---|
-| [relationship-analysis-v2-and-mcp-onboarding.md](./relationship-analysis-v2-and-mcp-onboarding.md) | 关系分析 v2、联系人聊天时间线、首页 MCP/AI 接入说明 |
+| [relationship-analysis-v2-and-mcp-onboarding.md](./relationship-analysis-v2-and-mcp-onboarding.md) | 关系分析 v2、联系人聊天时间线、统一 runtime/MCP/ChatLab 整合 |

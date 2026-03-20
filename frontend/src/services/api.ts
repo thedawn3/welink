@@ -26,6 +26,13 @@ import type {
   ControversyDetail,
   ContactHistoryQuery,
   ContactHistoryRawResponse,
+  DecryptStartOptions,
+  RuntimeStatus,
+  RuntimeTask,
+  RuntimeLogEntry,
+  RuntimeChanges,
+  RuntimeConfigCheck,
+  ChatLabExportResponse,
 } from '../types';
 
 // 配置 axios 实例
@@ -222,6 +229,56 @@ export const relationsApi = {
 
   getControversyDetail: (username: string) =>
     api.get<void, ControversyDetail>('/controversy/detail', { params: { username } }),
+};
+
+export const systemApi = {
+  getRuntime: () =>
+    api.get<void, RuntimeStatus>('/system/runtime'),
+
+  getConfigCheck: () =>
+    api.get<void, RuntimeConfigCheck>('/system/config-check'),
+
+  getTasks: (limit = 100) =>
+    api.get<void, RuntimeTask[] | { tasks?: RuntimeTask[]; items?: RuntimeTask[] }>('/system/tasks', {
+      params: { limit },
+    }),
+
+  getLogs: (limit = 200, taskId?: string) =>
+    api.get<void, RuntimeLogEntry[] | { logs?: RuntimeLogEntry[]; items?: RuntimeLogEntry[] }>('/system/logs', {
+      params: { limit, ...(taskId ? { task_id: taskId } : {}) },
+    }),
+
+  getChanges: () =>
+    api.get<void, RuntimeChanges>('/system/changes'),
+
+  startDecrypt: (options: import('../types').DecryptStartOptions = {}) =>
+    api.post<void, { status: string; message?: string }>('/system/decrypt/start', options),
+
+  stopDecrypt: () =>
+    api.post<void, { status: string; message?: string }>('/system/decrypt/stop', {}),
+
+  reindex: (from: number | null = 0, to: number | null = 0) =>
+    api.post<void, { status: string }>('/system/reindex', { from, to }),
+
+  createEventsSource: (): EventSource | null => {
+    if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
+      return null;
+    }
+    return new EventSource('/api/events');
+  },
+};
+
+export const exportApi = {
+  exportChatLabContact: (username: string, limit = 200) =>
+    api.get<void, ChatLabExportResponse>('/export/chatlab/contact', { params: { username, limit } }),
+
+  exportChatLabGroup: (username: string, date?: string) =>
+    api.get<void, ChatLabExportResponse>('/export/chatlab/group', { params: { username, ...(date ? { date } : {}) } }),
+
+  exportChatLabSearch: (q: string, includeMine = true, limit = 200) =>
+    api.get<void, ChatLabExportResponse>('/export/chatlab/search', {
+      params: { q, limit, include_mine: includeMine ? 'true' : 'false' },
+    }),
 };
 
 export default api;

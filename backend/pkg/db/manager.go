@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	_ "modernc.org/sqlite"
 )
 
 type DBManager struct {
+	mu         sync.RWMutex
 	ContactDB  *sql.DB
 	MessageDBs []*sql.DB
 	DataDir    string
@@ -271,29 +273,46 @@ func (mgr *DBManager) dataDir() string {
 func NewDBManager(dataDir string) (*DBManager, error) {
 	mgr := &DBManager{DataDir: dataDir}
 	log.Printf("Initializing DBManager with DATA_DIR: %s", dataDir)
+	if err := mgr.Reload(dataDir); err != nil {
+		return nil, err
+	}
+	return mgr, nil
+}
+
+func (mgr *DBManager) Reload(dataDir string) error {
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+
+	if dataDir != "" {
+		mgr.DataDir = dataDir
+	}
+	log.Printf("Reloading DBManager with DATA_DIR: %s", mgr.DataDir)
+	mgr.closeLocked()
 
 	// 1. 加载联系人数据库
-	contactPath := filepath.Join(dataDir, "contact/contact.db")
+	contactPath := filepath.Join(mgr.DataDir, "contact/contact.db")
 	log.Printf("Checking contact DB at: %s", contactPath)
 	if _, err := os.Stat(contactPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("contact db not found at %s", contactPath)
+		log.Printf("Contact DB not ready yet: %s", contactPath)
+		return nil
 	}
 
 	db, err := sql.Open("sqlite", contactPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open contact db: %v", err)
+		return fmt.Errorf("failed to open contact db: %v", err)
 	}
 	mgr.ContactDB = db
 
 	// 2. 加载所有消息数据库
-	msgDir := filepath.Join(dataDir, "message")
+	msgDir := filepath.Join(mgr.DataDir, "message")
 	log.Printf("Scanning message dir: %s", msgDir)
 	if _, err := os.Stat(msgDir); os.IsNotExist(err) {
-		return nil, fmt.Errorf("message dir not found at %s", msgDir)
+		log.Printf("Message dir not ready yet: %s", msgDir)
+		return nil
 	}
 	files, err := os.ReadDir(msgDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read message dir: %v", err)
+		return fmt.Errorf("failed to read message dir: %v", err)
 	}
 
 	for _, file := range files {
@@ -315,7 +334,26 @@ func NewDBManager(dataDir string) (*DBManager, error) {
 	}
 
 	log.Printf("DBManager initialized: 1 contact DB, %d message DBs found.", len(mgr.MessageDBs))
-	return mgr, nil
+	return nil
+}
+
+func (mgr *DBManager) Ready() bool {
+	mgr.mu.RLock()
+	defer mgr.mu.RUnlock()
+	return mgr.ContactDB != nil && len(mgr.MessageDBs) > 0
+}
+
+func (mgr *DBManager) closeLocked() {
+	if mgr.ContactDB != nil {
+		_ = mgr.ContactDB.Close()
+		mgr.ContactDB = nil
+	}
+	for _, mdb := range mgr.MessageDBs {
+		if mdb != nil {
+			_ = mdb.Close()
+		}
+	}
+	mgr.MessageDBs = nil
 }
 
 // createOptimizationIndexes 为消息表创建性能优化索引

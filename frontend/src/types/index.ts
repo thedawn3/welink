@@ -97,9 +97,166 @@ export interface BackendStatus {
   is_indexing: boolean;
   is_initialized: boolean;
   total_cached: number;
+  engine_type?: string;
+  decrypt_state?: string;
+  data_revision?: string | number;
+  last_decrypt_at?: string;
+  last_reindex_at?: string;
+  pending_changes?: number;
+  last_error?: string;
 }
 
-export type TabType = 'dashboard' | 'db' | 'groups' | 'privacy';
+export type TabType = 'dashboard' | 'db' | 'groups' | 'privacy' | 'system';
+
+export interface DecryptStartOptions {
+  platform?: string;
+  source_data_dir?: string;
+  analysis_data_dir?: string;
+  work_dir?: string;
+  command?: string;
+  auto_refresh?: boolean;
+  wal_enabled?: boolean;
+}
+
+export interface RuntimeStatus {
+  deployment_target?: string;
+  engine_type?: string;
+  decrypt_state?: string;
+  data_revision?: string | number;
+  last_decrypt_at?: string;
+  last_reindex_at?: string;
+  last_message_at?: string;
+  last_sns_at?: string;
+  pending_changes?: number;
+  last_error?: string;
+  last_change_reason?: string;
+  updated_at?: string;
+  is_indexing?: boolean;
+  is_initialized?: boolean;
+  total_cached?: number;
+}
+
+export interface RuntimeTask {
+  id?: string;
+  type?: string;
+  status?: string;
+  progress?: number;
+  started_at?: string;
+  finished_at?: string;
+  message?: string;
+  detail?: string;
+  error?: string;
+  updated_at?: string;
+  work_dir?: string;
+  command_summary?: string;
+}
+
+export interface RuntimeLogEntry {
+  id?: number;
+  time?: string;
+  level?: string;
+  source?: string;
+  message: string;
+  stream?: string;
+  task_id?: string;
+  fields?: Record<string, string>;
+}
+
+export interface RuntimeSyncStatus {
+  running?: boolean;
+  watch_wal?: boolean;
+  last_revision_seq?: number;
+}
+
+export interface DirectoryValidation {
+  path?: string;
+  exists?: boolean;
+  writable?: boolean;
+  standard_layout?: boolean;
+  has_contact?: boolean;
+  has_message?: boolean;
+  has_sns?: boolean;
+  issues?: string[];
+  warnings?: string[];
+}
+
+export interface RuntimeConfigCheckFeature {
+  supported?: boolean;
+  enabled?: boolean;
+  provider?: string;
+  issues?: string[];
+  warnings?: string[];
+}
+
+export interface RuntimeConfigCheckSns {
+  detected?: boolean;
+  ready?: boolean;
+  db_path?: string;
+  issues?: string[];
+  warnings?: string[];
+}
+
+export interface RuntimeConfigCheck {
+  deployment_target?: string;
+  mode?: string;
+  analysis_dir?: DirectoryValidation;
+  source_dir?: DirectoryValidation;
+  work_dir?: DirectoryValidation;
+  decrypt?: RuntimeConfigCheckFeature;
+  sync?: RuntimeConfigCheckFeature;
+  sns?: RuntimeConfigCheckSns;
+  issues?: string[];
+  warnings?: string[];
+  suggested_actions?: string[];
+}
+
+export interface RuntimeChanges {
+  data_revision: number;
+  pending_changes: number;
+  last_reindex_at?: string;
+  last_change_reason?: string;
+  last_error?: string;
+  items: RuntimeLogEntry[];
+  sync?: RuntimeSyncStatus;
+}
+
+export interface RuntimeEvent {
+  type: string;
+  id?: string;
+  at?: string;
+  revision?: string | number;
+  message?: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface RuntimeMeta {
+  lastEventAt?: string;
+  lastRefreshAt?: string;
+  pollingFallback?: boolean;
+  lastRefreshReason?: string;
+}
+
+export type ChatLabExportScope = 'contact' | 'group' | 'search';
+
+export interface ChatLabExportSummary {
+  scope?: ChatLabExportScope;
+  username?: string;
+  query?: string;
+  date?: string;
+  include_mine?: boolean;
+  limit?: number;
+  conversation_name?: string;
+  message_count?: number;
+  member_count?: number;
+}
+
+export interface ChatLabExportResponse {
+  file_name?: string;
+  mime_type?: string;
+  data?: unknown;
+  summary?: ChatLabExportSummary;
+  [key: string]: unknown;
+}
 
 export interface GroupInfo {
   username: string;

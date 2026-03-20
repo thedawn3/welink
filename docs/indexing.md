@@ -1,5 +1,19 @@
 # 索引与初始化说明
 
+## 统一运行时视角
+
+当前索引流程已不是单纯的“手工 `/api/init` + 轮询 `/api/status`”。WeLink 现在把数据刷新收口为：
+
+`ingest/decrypt -> sync revision -> analysis rebuild -> runtime status/event update`
+
+关键点：
+
+- `sync` 负责监听 `*.db / *.db-wal / *.db-shm`，并把短时间内的连续变化 debounce 为一个 revision
+- `analysis` 在 revision 落稳后自动重建缓存，并把 `data_revision` 加一
+- `runtime` 统一记录 `is_indexing`、`is_initialized`、`pending_changes`、`last_reindex_at`
+- 前端优先订阅 `/api/events`，断开时才回退轮询 `/api/system/runtime`
+- `/api/status` 继续保留，但主要用于兼容旧脚本和旧流程
+
 
 ## 初始化流程
 
@@ -40,7 +54,7 @@ POST /api/init
 
 ### 轮询状态
 
-前端每 2 秒轮询 `GET /api/status`：
+兼容模式下，前端仍可轮询 `GET /api/status`：
 
 ```json
 {
@@ -51,6 +65,13 @@ POST /api/init
 ```
 
 直到 `is_initialized = true` 才允许进入主界面。
+
+新前端会优先消费 `/api/events`，收到 revision / reindex / decrypt 事件后立即刷新；只有 SSE 不可用时才退回轮询。
+
+如果要确认 revision 是否真的被同步层合并并处理完成，可同时观察：
+
+- `GET /api/system/runtime`
+- `GET /api/system/changes`
 
 ### 自动重新初始化
 
@@ -214,3 +235,14 @@ Docker Compose 下通常设置：
 WELINK_DATA_DIR=/data
 WELINK_BACKEND_PORT=8080
 ```
+
+
+## revision 与自动刷新
+
+自动刷新链路的判断标准不再只有 `is_initialized`：
+
+- `data_revision` 递增：代表一轮新数据已被分析层吸收
+- `pending_changes > 0`：代表同步层已检测到变化，但分析重建尚未完全结束
+- `last_reindex_at` 更新：代表最近一次完整重建已完成
+
+当 `message_*.db` 与对应 `-wal/-shm` 在短时间内连续变化时，同步层会尽量把它们合并成同一轮 revision，避免重复重建。
