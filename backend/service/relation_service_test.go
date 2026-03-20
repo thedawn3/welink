@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 	"testing"
+	"welink/backend/model"
 )
 
 func TestConfidenceWithReason_ConsidersSampleAndFreshness(t *testing.T) {
@@ -105,5 +106,23 @@ func TestBuildStaleHint_HistoricalAndCurrent(t *testing.T) {
 	}
 	if hint := buildStaleHint(220, true); !strings.Contains(hint, "历史") {
 		t.Fatalf("expected historical stale hint, got: %s", hint)
+	}
+}
+
+func TestFilterProfilesByGender_ExcludeUnknown(t *testing.T) {
+	profiles := []*relationProfile{
+		{Username: "u_male", Gender: model.GenderMale},
+		{Username: "u_female", Gender: model.GenderFemale},
+		{Username: "u_unknown", Gender: model.GenderUnknown},
+	}
+
+	maleProfiles := filterProfilesByGender(profiles, model.GenderMale)
+	if len(maleProfiles) != 1 || maleProfiles[0].Username != "u_male" {
+		t.Fatalf("unexpected male profiles: %#v", maleProfiles)
+	}
+
+	femaleProfiles := filterProfilesByGender(profiles, model.GenderFemale)
+	if len(femaleProfiles) != 1 || femaleProfiles[0].Username != "u_female" {
+		t.Fatalf("unexpected female profiles: %#v", femaleProfiles)
 	}
 }

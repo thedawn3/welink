@@ -6,6 +6,7 @@ export interface Contact {
   username: string;
   nickname: string;
   remark: string;
+  gender?: Gender;
   alias: string;
   flag: number;
   description: string;
@@ -52,8 +53,8 @@ export interface GlobalStats {
 }
 
 export interface ContactDetail {
-  hourly_dist: number[];      // [24]
-  weekly_dist: number[];      // [7]
+  hourly_dist: number[]; // [24]
+  weekly_dist: number[]; // [7]
   daily_heatmap: Record<string, number>;
   late_night_count: number;
   money_count: number;
@@ -70,7 +71,7 @@ export interface DBInfo {
   name: string;
   path: string;
   size: number;
-  type: 'contact' | 'message';
+  type: "contact" | "message";
 }
 
 export interface TableInfo {
@@ -106,7 +107,15 @@ export interface BackendStatus {
   last_error?: string;
 }
 
-export type TabType = 'dashboard' | 'db' | 'groups' | 'privacy' | 'system';
+export type TabType =
+  | "dashboard"
+  | "contacts"
+  | "sns"
+  | "groups"
+  | "db"
+  | "privacy"
+  | "system";
+export type Gender = "male" | "female" | "unknown";
 
 export interface DecryptStartOptions {
   platform?: string;
@@ -196,6 +205,23 @@ export interface RuntimeConfigCheckSns {
   warnings?: string[];
 }
 
+export interface RuntimeConfigCheckMedia {
+  path?: string;
+  wechat_decrypt_dir?: string;
+  exists?: boolean;
+  readable?: boolean;
+  image_preview_enabled?: boolean;
+  preview_state?: string;
+  image_aes_key_configured?: boolean;
+  image_aes_key_source?: string;
+  image_key_mode?: string;
+  image_key_count?: number;
+  v2_images_detected?: boolean;
+  suggested_command?: string;
+  issues?: string[];
+  warnings?: string[];
+}
+
 export interface RuntimeConfigCheck {
   deployment_target?: string;
   mode?: string;
@@ -208,6 +234,7 @@ export interface RuntimeConfigCheck {
   decrypt?: RuntimeConfigCheckFeature;
   sync?: RuntimeConfigCheckFeature;
   sns?: RuntimeConfigCheckSns;
+  media?: RuntimeConfigCheckMedia;
   issues?: string[];
   warnings?: string[];
   suggested_actions?: string[];
@@ -239,7 +266,7 @@ export interface RuntimeMeta {
   lastRefreshReason?: string;
 }
 
-export type ChatLabExportScope = 'contact' | 'group' | 'search';
+export type ChatLabExportScope = "contact" | "group" | "search";
 
 export interface ChatLabExportSummary {
   scope?: ChatLabExportScope;
@@ -284,9 +311,9 @@ export interface GroupDetail {
 }
 
 export interface HealthStatus {
-  hot: number;   // 最近 7 天有消息
-  warm: number;  // 有消息但超过 7 天
-  cold: number;  // 零消息
+  hot: number; // 最近 7 天有消息
+  warm: number; // 有消息但超过 7 天
+  cold: number; // 零消息
 }
 
 export interface FilteredStats {
@@ -295,27 +322,32 @@ export interface FilteredStats {
 }
 
 export interface SentimentPoint {
-  month: string;   // "2024-03"
-  score: number;   // 0~1
+  month: string; // "2024-03"
+  score: number; // 0~1
   count: number;
 }
 
 export interface SentimentResult {
   monthly: SentimentPoint[];
-  overall: number;   // 0~1
+  overall: number; // 0~1
   positive: number;
   negative: number;
   neutral: number;
 }
 
 export interface ChatMessage {
-  time: string;     // "14:23"
+  id?: string;
+  time: string; // "14:23"
   content: string;
   is_mine: boolean;
   type: number;
-  date?: string;    // "2024-03-15"，搜索结果中使用
+  date?: string; // "2024-03-15"，搜索结果中使用
   timestamp?: number;
-  ts?: number;      // 兼容旧前端字段
+  ts?: number; // 兼容旧前端字段
+  media_kind?: "image" | "video" | "file";
+  thumb_url?: string;
+  media_url?: string;
+  media_status?: string;
 }
 
 export interface ContactHistoryQuery {
@@ -356,16 +388,22 @@ export interface GlobalSearchHit {
 }
 
 export interface GroupChatMessage {
+  id?: string;
   time: string;
   speaker: string;
   content: string;
   is_mine: boolean;
   type: number;
+  media_kind?: "image" | "video" | "file";
+  thumb_url?: string;
+  media_url?: string;
+  media_status?: string;
 }
 
 export interface RelationOverviewItem {
   username: string;
   name: string;
+  gender?: Gender;
   score: number;
   confidence?: number;
   why?: string;
@@ -379,6 +417,12 @@ export interface RelationOverview {
   cooling: RelationOverviewItem[];
   initiative: RelationOverviewItem[];
   fast_reply: RelationOverviewItem[];
+}
+
+export interface RelationOverviewGrouped {
+  all: RelationOverview;
+  male: RelationOverview;
+  female: RelationOverview;
 }
 
 export interface RelationEvidence {
@@ -401,7 +445,7 @@ export interface RelationMetricItem {
   label: string;
   value: string;
   sub_value?: string;
-  trend?: 'up' | 'down' | 'flat' | string;
+  trend?: "up" | "down" | "flat" | string;
   hint?: string;
   raw_value?: number;
 }
@@ -450,6 +494,7 @@ export interface RelationProfileDetail {
 export interface ControversyItem {
   username: string;
   name: string;
+  gender?: Gender;
   label: string;
   score: number;
   confidence: number;
@@ -467,6 +512,12 @@ export interface ControversyOverview {
   cold_violence: ControversyItem[];
 }
 
+export interface ControversyOverviewGrouped {
+  all: ControversyOverview;
+  male: ControversyOverview;
+  female: ControversyOverview;
+}
+
 export interface ControversyDetail {
   username: string;
   name: string;
@@ -478,7 +529,28 @@ export interface ControversyDetail {
 
 // null means "all time"
 export interface TimeRange {
-  from: number | null;  // Unix seconds
-  to: number | null;    // Unix seconds
-  label: string;        // e.g. "近1年" or "2024-03"
+  from: number | null; // Unix seconds
+  to: number | null; // Unix seconds
+  label: string; // e.g. "近1年" or "2024-03"
+}
+
+export type SnsSearchKind = "all" | "post" | "interaction" | "index";
+
+export interface SnsSearchItem {
+  kind: "post" | "interaction" | "index";
+  feed_id: string;
+  username: string;
+  display_name: string;
+  created_at: string;
+  content_text: string;
+  raw_content?: string;
+  counterparty_username?: string;
+  counterparty_name?: string;
+}
+
+export interface SnsSearchResponse {
+  items: SnsSearchItem[];
+  total?: number;
+  has_sns_db?: boolean;
+  unavailable_reason?: string;
 }

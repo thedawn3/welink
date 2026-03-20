@@ -82,6 +82,7 @@ type ContactService struct {
 	msgRepo          *repository.MessageRepository
 	cfg              *config.AnalysisConfig
 	tz               *time.Location
+	mediaResolver    *chatMediaResolver
 	segmenter        gse.Segmenter
 	segmenterMu      sync.Mutex // 保护 segmenter 不被并发调用（gse 非线程安全）
 	cache            []ContactStatsExtended
@@ -189,6 +190,7 @@ func NewContactService(mgr *db.DBManager, cfg *config.Config) *ContactService {
 		msgRepo:          repository.NewMessageRepository(mgr),
 		cfg:              &cfg.Analysis,
 		tz:               loc,
+		mediaResolver:    newChatMediaResolver(cfg),
 		groupDetailCache: make(map[string]*GroupDetail),
 	}
 	svc.segmenter.LoadDict()
@@ -392,7 +394,7 @@ func (s *ContactService) loadContactsForAnalysis() []model.Contact {
 	}
 
 	rows, err := s.dbMgr.ContactDB.Query(
-		"SELECT username, nick_name, remark, alias, flag, COALESCE(description,''), COALESCE(big_head_url,''), COALESCE(small_head_url,''), delete_flag FROM contact WHERE verify_flag=0",
+		"SELECT username, nick_name, remark, alias, flag, COALESCE(description,''), COALESCE(big_head_url,''), COALESCE(small_head_url,''), delete_flag, COALESCE(extra_buffer, x'') FROM contact WHERE verify_flag=0",
 	)
 	if err != nil {
 		return nil
@@ -404,11 +406,13 @@ func (s *ContactService) loadContactsForAnalysis() []model.Contact {
 	for rows.Next() {
 		var c model.Contact
 		var deleteFlag int
-		if err := rows.Scan(&c.Username, &c.Nickname, &c.Remark, &c.Alias, &c.Flag, &c.Description, &c.BigHeadURL, &c.SmallHeadURL, &deleteFlag); err != nil {
+		var extraBuffer []byte
+		if err := rows.Scan(&c.Username, &c.Nickname, &c.Remark, &c.Alias, &c.Flag, &c.Description, &c.BigHeadURL, &c.SmallHeadURL, &deleteFlag, &extraBuffer); err != nil {
 			continue
 		}
 		hasHistory := s.msgRepo.HasIndexedTable(c.Username)
 		c.DeleteFlag = deleteFlag
+		c.Gender = parseExplicitGenderFromExtraBuffer(extraBuffer)
 		c.IsDeleted = deriveDeletedStatus(c, hasHistory)
 		c.ContactKind, c.IsBiz, c.LikelyMarketing, c.IsLikelyAlt = classifyContactKind(c)
 		if isUnsupportedAnalysisUsername(c.Username) {
@@ -922,12 +926,17 @@ func (s *ContactService) GetContactDetail(username string) *ContactDetail {
 
 // ChatMessage 单条聊天消息（用于日历点击查看当天记录）
 type ChatMessage struct {
-	Timestamp int64  `json:"timestamp,omitempty"` // Unix 秒，用于时间线分页/排序
-	Time      string `json:"time"`                // "14:23"
-	Content   string `json:"content"`             // 消息内容或类型描述
-	IsMine    bool   `json:"is_mine"`             // true=我发的
-	Type      int    `json:"type"`                // local_type
-	Date      string `json:"date,omitempty"`      // "2024-03-15"
+	ID          string `json:"id,omitempty"`
+	Timestamp   int64  `json:"timestamp,omitempty"`    // Unix 秒，用于时间线分页/排序
+	Time        string `json:"time"`                   // "14:23"
+	Content     string `json:"content"`                // 消息内容或类型描述
+	IsMine      bool   `json:"is_mine"`                // true=我发的
+	Type        int    `json:"type"`                   // local_type
+	Date        string `json:"date,omitempty"`         // "2024-03-15"
+	MediaKind   string `json:"media_kind,omitempty"`   // image
+	ThumbURL    string `json:"thumb_url,omitempty"`    // 缩略图 URL
+	MediaURL    string `json:"media_url,omitempty"`    // 原图 URL
+	MediaStatus string `json:"media_status,omitempty"` // ready / missing_*
 }
 
 type GlobalSearchHit struct {
@@ -960,19 +969,19 @@ func (s *ContactService) GetDayMessages(username, date string) []ChatMessage {
 		contactRowID := lookupContactRowID(mdb, username)
 
 		rows, err := mdb.Query(fmt.Sprintf(
-			"SELECT create_time, local_type, message_content, COALESCE(WCDB_CT_message_content,0), COALESCE(real_sender_id,0) FROM [%s] WHERE create_time >= %d AND create_time < %d ORDER BY create_time ASC",
+			"SELECT rowid, local_id, create_time, local_type, message_content, COALESCE(WCDB_CT_message_content,0), COALESCE(real_sender_id,0), packed_info_data FROM [%s] WHERE create_time >= %d AND create_time < %d ORDER BY create_time ASC",
 			tableName, dayStart, dayEnd,
 		))
 		if err != nil {
 			continue
 		}
 		for rows.Next() {
-			var ts int64
+			var rowID, localID, ts int64
 			var lt int
-			var rawContent []byte
+			var rawContent, packedInfo []byte
 			var ct, senderID int64
-			rows.Scan(&ts, &lt, &rawContent, &ct, &senderID)
-			msg, ok := s.buildChatMessage(ts, lt, rawContent, ct, senderID, contactRowID)
+			rows.Scan(&rowID, &localID, &ts, &lt, &rawContent, &ct, &senderID, &packedInfo)
+			msg, ok := s.buildChatMessage(username, rowID, localID, ts, lt, rawContent, ct, senderID, contactRowID, packedInfo)
 			if !ok {
 				continue
 			}
@@ -1017,7 +1026,7 @@ func (s *ContactService) GetMessageHistory(username string, before int64, limit 
 	for dbIndex, mdb := range s.dbMgr.MessageDBs {
 		contactRowID := lookupContactRowID(mdb, username)
 		sqlStr := fmt.Sprintf(
-			"SELECT rowid, create_time, local_type, message_content, COALESCE(WCDB_CT_message_content,0), COALESCE(real_sender_id,0) FROM [%s]%s ORDER BY create_time DESC, rowid DESC LIMIT %d",
+			"SELECT rowid, local_id, create_time, local_type, message_content, COALESCE(WCDB_CT_message_content,0), COALESCE(real_sender_id,0), packed_info_data FROM [%s]%s ORDER BY create_time DESC, rowid DESC LIMIT %d",
 			tableName, baseWhere, limit+1,
 		)
 		rows, err := mdb.Query(sqlStr)
@@ -1025,12 +1034,12 @@ func (s *ContactService) GetMessageHistory(username string, before int64, limit 
 			continue
 		}
 		for rows.Next() {
-			var rowID, ts int64
+			var rowID, localID, ts int64
 			var lt int
-			var rawContent []byte
+			var rawContent, packedInfo []byte
 			var ct, senderID int64
-			rows.Scan(&rowID, &ts, &lt, &rawContent, &ct, &senderID)
-			msg, ok := s.buildChatMessage(ts, lt, rawContent, ct, senderID, contactRowID)
+			rows.Scan(&rowID, &localID, &ts, &lt, &rawContent, &ct, &senderID, &packedInfo)
+			msg, ok := s.buildChatMessage(username, rowID, localID, ts, lt, rawContent, ct, senderID, contactRowID, packedInfo)
 			if !ok {
 				continue
 			}
@@ -1215,20 +1224,29 @@ func lookupContactRowID(mdb *sql.DB, username string) int64 {
 	return contactRowID
 }
 
-func (s *ContactService) buildChatMessage(ts int64, lt int, rawContent []byte, ct, senderID, contactRowID int64) (ChatMessage, bool) {
+func (s *ContactService) buildChatMessage(username string, rowID, localID, ts int64, lt int, rawContent []byte, ct, senderID, contactRowID int64, packedInfo []byte) (ChatMessage, bool) {
 	content := describePrivateMessageContent(lt, decodeGroupContent(rawContent, ct))
 	if content == "" {
 		return ChatMessage{}, false
 	}
 	t := time.Unix(ts, 0).In(s.tz)
-	return ChatMessage{
+	msg := ChatMessage{
+		ID:        safeMessageID(username, fmt.Sprintf("%d", rowID), fmt.Sprintf("%d", localID)),
 		Timestamp: ts,
 		Time:      t.Format("15:04"),
 		Date:      t.Format("2006-01-02"),
 		Content:   content,
 		IsMine:    contactRowID < 0 || senderID != contactRowID,
 		Type:      lt,
-	}, true
+	}
+	if lt == 3 && s.mediaResolver != nil {
+		asset := s.mediaResolver.buildChatImageAsset(username, ts, packedInfo)
+		msg.MediaKind = "image"
+		msg.MediaStatus = asset.Status
+		msg.ThumbURL = asset.ThumbURL
+		msg.MediaURL = asset.MediaURL
+	}
+	return msg, true
 }
 
 func describePrivateMessageContent(localType int, rawText string) string {
@@ -1818,11 +1836,16 @@ func (s *ContactService) GetGroupDetail(username string) *GroupDetail {
 
 // GroupChatMessage 群聊单条消息（含发言者显示名）
 type GroupChatMessage struct {
-	Time    string `json:"time"`    // "HH:MM"
-	Speaker string `json:"speaker"` // 发言者显示名
-	Content string `json:"content"` // 消息内容
-	IsMine  bool   `json:"is_mine"` // 是否是我发的
-	Type    int    `json:"type"`    // local_type
+	ID          string `json:"id,omitempty"`
+	Time        string `json:"time"`                   // "HH:MM"
+	Speaker     string `json:"speaker"`                // 发言者显示名
+	Content     string `json:"content"`                // 消息内容
+	IsMine      bool   `json:"is_mine"`                // 是否是我发的
+	Type        int    `json:"type"`                   // local_type
+	MediaKind   string `json:"media_kind,omitempty"`   // image
+	ThumbURL    string `json:"thumb_url,omitempty"`    // 缩略图 URL
+	MediaURL    string `json:"media_url,omitempty"`    // 原图 URL
+	MediaStatus string `json:"media_status,omitempty"` // ready / missing_*
 }
 
 // GetGroupDayMessages 返回群聊某一天的聊天记录
@@ -1866,18 +1889,18 @@ func (s *ContactService) GetGroupDayMessages(username, date string) []GroupChatM
 		// 当前版本：is_mine = 从群消息前缀"wxid:\n"判断
 
 		rows, err := mdb.Query(fmt.Sprintf(
-			"SELECT create_time, local_type, message_content, COALESCE(WCDB_CT_message_content,0), COALESCE(real_sender_id,0) FROM [%s] WHERE create_time >= %d AND create_time < %d ORDER BY create_time ASC",
+			"SELECT rowid, local_id, create_time, local_type, message_content, COALESCE(WCDB_CT_message_content,0), COALESCE(real_sender_id,0), packed_info_data FROM [%s] WHERE create_time >= %d AND create_time < %d ORDER BY create_time ASC",
 			tableName, dayStart, dayEnd,
 		))
 		if err != nil {
 			continue
 		}
 		for rows.Next() {
-			var ts int64
+			var rowID, localID, ts int64
 			var lt int
-			var rawContent []byte
+			var rawContent, packedInfo []byte
 			var ct, senderID int64
-			rows.Scan(&ts, &lt, &rawContent, &ct, &senderID)
+			rows.Scan(&rowID, &localID, &ts, &lt, &rawContent, &ct, &senderID, &packedInfo)
 
 			rawText := decodeGroupContent(rawContent, ct)
 			rawText = strings.TrimSpace(rawText)
@@ -1934,13 +1957,23 @@ func (s *ContactService) GetGroupDayMessages(username, date string) []GroupChatM
 				continue
 			}
 
-			msgs = append(msgs, GroupChatMessage{
+			msg := GroupChatMessage{
+				ID:      safeMessageID(username, fmt.Sprintf("%d", rowID), fmt.Sprintf("%d", localID)),
 				Time:    time.Unix(ts, 0).In(s.tz).Format("15:04"),
 				Speaker: speaker,
 				Content: content,
 				IsMine:  false, // 群聊暂不区分"我"，仅展示发言者
 				Type:    lt,
-			})
+			}
+			if lt == 3 && s.mediaResolver != nil {
+				asset := s.mediaResolver.buildChatImageAsset(username, ts, packedInfo)
+				msg.MediaKind = "image"
+				msg.MediaStatus = asset.Status
+				msg.ThumbURL = asset.ThumbURL
+				msg.MediaURL = asset.MediaURL
+			}
+
+			msgs = append(msgs, msg)
 		}
 		rows.Close()
 	}

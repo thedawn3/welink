@@ -15,6 +15,7 @@ import (
 	"welink/backend/config"
 	"welink/backend/ingest"
 	runtimepkg "welink/backend/runtime"
+	"welink/backend/service"
 	syncmgr "welink/backend/sync"
 
 	"github.com/gin-gonic/gin"
@@ -81,6 +82,23 @@ type snsValidation struct {
 	Warnings []string `json:"warnings,omitempty"`
 }
 
+type mediaValidation struct {
+	Path                  string   `json:"path,omitempty"`
+	WechatDecryptDir      string   `json:"wechat_decrypt_dir,omitempty"`
+	Exists                bool     `json:"exists"`
+	Readable              bool     `json:"readable"`
+	ImagePreviewEnabled   bool     `json:"image_preview_enabled"`
+	PreviewState          string   `json:"preview_state,omitempty"`
+	ImageAESKeyConfigured bool     `json:"image_aes_key_configured"`
+	ImageAESKeySource     string   `json:"image_aes_key_source,omitempty"`
+	ImageKeyMode          string   `json:"image_key_mode,omitempty"`
+	ImageKeyCount         int      `json:"image_key_count,omitempty"`
+	V2ImagesDetected      bool     `json:"v2_images_detected"`
+	SuggestedCommand      string   `json:"suggested_command,omitempty"`
+	Issues                []string `json:"issues,omitempty"`
+	Warnings              []string `json:"warnings,omitempty"`
+}
+
 type runtimeConfigCheck struct {
 	DeploymentTarget string               `json:"deployment_target"`
 	Mode             string               `json:"mode"`
@@ -93,6 +111,7 @@ type runtimeConfigCheck struct {
 	Decrypt          capabilityValidation `json:"decrypt"`
 	Sync             capabilityValidation `json:"sync"`
 	SNS              snsValidation        `json:"sns"`
+	Media            mediaValidation      `json:"media"`
 	Issues           []string             `json:"issues,omitempty"`
 	Warnings         []string             `json:"warnings,omitempty"`
 	SuggestedActions []string             `json:"suggested_actions,omitempty"`
@@ -714,6 +733,7 @@ func (rt *systemRuntime) inspectConfigCheck(req decryptStartRequest) runtimeConf
 	analysisDir := inspectDataDir(resolved.AnalysisDataDir, "")
 	sourceDir := inspectDataDir(resolved.SourceDataDir, resolved.AnalysisDataDir)
 	workDir := inspectWorkDir(resolved.WorkDir)
+	media := inspectMediaConfig(strings.TrimSpace(rt.cfg.Data.MsgDir))
 	if mode == "analysis-only" {
 		sourceDir = directoryValidation{}
 	}
@@ -806,10 +826,11 @@ func (rt *systemRuntime) inspectConfigCheck(req decryptStartRequest) runtimeConf
 		Decrypt:          decrypt,
 		Sync:             syncStatus,
 		SNS:              sns,
-		SuggestedActions: buildSuggestedActions(deploymentTarget, mode, sourceDir, analysisDir, workDir, decrypt, syncStatus),
+		Media:            media,
+		SuggestedActions: buildSuggestedActions(deploymentTarget, mode, sourceDir, analysisDir, workDir, decrypt, syncStatus, media),
 	}
-	check.Issues = dedupeStrings(append(append(append(append([]string{}, analysisDir.Issues...), sourceDir.Issues...), workDir.Issues...), append(decrypt.Issues, append(syncStatus.Issues, sns.Issues...)...)...))
-	check.Warnings = dedupeStrings(append(append(append([]string{}, decrypt.Warnings...), syncStatus.Warnings...), sns.Warnings...))
+	check.Issues = dedupeStrings(append(append(append(append([]string{}, analysisDir.Issues...), sourceDir.Issues...), workDir.Issues...), append(decrypt.Issues, append(syncStatus.Issues, append(sns.Issues, media.Issues...)...)...)...))
+	check.Warnings = dedupeStrings(append(append(append(append([]string{}, decrypt.Warnings...), syncStatus.Warnings...), sns.Warnings...), media.Warnings...))
 	check.BlockingReasons = buildBlockingReasons(check)
 	check.CanStartSync = check.Mode != "analysis-only" && len(check.BlockingReasons) == 0
 	if len(check.BlockingReasons) > 0 {
@@ -1023,6 +1044,7 @@ func buildSuggestedActions(
 	work directoryValidation,
 	decrypt capabilityValidation,
 	sync capabilityValidation,
+	media mediaValidation,
 ) []string {
 	actions := make([]string, 0, 6)
 	if deploymentTarget == "docker" {
@@ -1051,7 +1073,54 @@ func buildSuggestedActions(
 	if !sync.Supported && len(sync.Issues) > 0 {
 		actions = append(actions, sync.Issues[0])
 	}
+	if strings.TrimSpace(media.Path) == "" {
+		actions = append(actions, "如需聊天图片缩略图/点击查看，请配置 WELINK_MSG_DIR 指向微信 msg 目录")
+	}
+	if media.Exists && media.V2ImagesDetected && !media.ImageAESKeyConfigured {
+		if strings.TrimSpace(media.WechatDecryptDir) == "" {
+			actions = append(actions, "如需自动读取 wechat-decrypt 的图片密钥结果，请配置 WELINK_WECHAT_DECRYPT_DIR")
+		}
+		actions = append(actions, "若最新图片只显示 [图片]，先在微信里点开几张图片，再运行 find_image_key；WeLink 会优先读取 image_keys.json，其次回退到单个 WELINK_IMAGE_AES_KEY")
+		if media.SuggestedCommand != "" {
+			actions = append(actions, "推荐命令："+media.SuggestedCommand)
+		}
+	}
 	return dedupeStrings(actions)
+}
+
+func inspectMediaConfig(msgDir string) mediaValidation {
+	cfg := &config.Config{}
+	cfg.Data.MsgDir = strings.TrimSpace(msgDir)
+	status := service.InspectChatMediaConfig(cfg)
+
+	result := mediaValidation{
+		WechatDecryptDir:      status.WechatDecryptDir,
+		Path:                  status.MsgDir,
+		Exists:                status.MsgDirExists,
+		Readable:              status.MsgDirExists,
+		ImagePreviewEnabled:   status.MsgDirExists,
+		ImageAESKeyConfigured: status.ImageAESKeyPresent,
+		ImageAESKeySource:     status.ImageAESKeySource,
+		ImageKeyMode:          status.ImageKeyMode,
+		ImageKeyCount:         status.ImageKeyCount,
+		V2ImagesDetected:      status.V2Detected,
+		SuggestedCommand:      status.SuggestedCommand,
+		Issues:                append([]string{}, status.Issues...),
+		Warnings:              append([]string{}, status.Warnings...),
+	}
+
+	switch {
+	case !result.Exists:
+		result.PreviewState = "disabled"
+	case result.V2ImagesDetected && !result.ImageAESKeyConfigured:
+		result.PreviewState = "partial"
+	case result.ImagePreviewEnabled:
+		result.PreviewState = "ready"
+	default:
+		result.PreviewState = "disabled"
+	}
+
+	return result
 }
 
 func normalizeRuntimeMode(value string) string {

@@ -9,27 +9,17 @@ vi.mock('../services/api', () => ({
     getTasks: vi.fn(),
     getLogs: vi.fn(),
     getChanges: vi.fn(),
-    createEventsSource: vi.fn(),
   },
 }));
 
 const mockedSystemApi = vi.mocked(systemApi);
-
-class MockEventSource {
-  onopen: ((this: EventSource, ev: Event) => unknown) | null = null;
-  onmessage: ((this: EventSource, ev: MessageEvent<string>) => unknown) | null = null;
-  onerror: ((this: EventSource, ev: Event) => unknown) | null = null;
-  close = vi.fn();
-}
 
 describe('useSystemRuntime', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('merges runtime and changes payloads and refreshes on SSE events', async () => {
-    const source = new MockEventSource();
-
+  it('merges runtime and changes payloads on bootstrap, then supports manual refresh', async () => {
     mockedSystemApi.getRuntime.mockResolvedValue({
       engine_type: 'windows',
       decrypt_state: 'ready',
@@ -53,7 +43,6 @@ describe('useSystemRuntime', () => {
       items: [],
       sync: { running: true, watch_wal: true, last_revision_seq: 7 },
     });
-    mockedSystemApi.createEventsSource.mockReturnValue(source as unknown as EventSource);
 
     const { result } = renderHook(() => useSystemRuntime(true, 60_000));
 
@@ -70,29 +59,35 @@ describe('useSystemRuntime', () => {
     expect(result.current.logs).toHaveLength(1);
     expect(result.current.meta.lastRefreshAt).toBeTruthy();
     expect(result.current.meta.lastRefreshReason).toBe('bootstrap');
+    expect(result.current.eventsConnected).toBe(false);
+    expect(result.current.latestEvent).toBeNull();
 
-    act(() => {
-      source.onopen?.call(source as unknown as EventSource, new Event('open'));
+    mockedSystemApi.getRuntime.mockResolvedValueOnce({
+      engine_type: 'windows',
+      decrypt_state: 'idle',
+      updated_at: '2026-03-20T04:01:00Z',
     });
-    expect(result.current.eventsConnected).toBe(true);
+    mockedSystemApi.getConfigCheck.mockResolvedValueOnce({
+      deployment_target: 'docker',
+      mode: 'analysis-only',
+    });
+    mockedSystemApi.getTasks.mockResolvedValueOnce({ items: [] });
+    mockedSystemApi.getLogs.mockResolvedValueOnce({ items: [] });
+    mockedSystemApi.getChanges.mockResolvedValueOnce({
+      data_revision: 4,
+      pending_changes: 0,
+      items: [],
+    });
 
-    act(() => {
-      source.onmessage?.call(source as unknown as EventSource, {
-        data: JSON.stringify({ type: 'runtime.revision.detected', revision: 'rev-2', message: 'detected' }),
-      } as MessageEvent<string>);
+    await act(async () => {
+      await result.current.refresh();
     });
 
-    await waitFor(() => {
-      expect(result.current.latestEvent?.type).toBe('runtime.revision.detected');
-    });
-    await waitFor(() => {
-      expect(mockedSystemApi.getRuntime).toHaveBeenCalledTimes(2);
-    });
-    expect(result.current.meta.lastEventAt).toBeTruthy();
-    expect(result.current.meta.lastRefreshReason).toBe('sse');
+    expect(result.current.runtime?.data_revision).toBe(4);
+    expect(result.current.meta.lastRefreshReason).toBe('manual');
   });
 
-  it('falls back to polling when SSE is unavailable', async () => {
+  it('keeps polling fallback disabled without SSE or interval refresh', async () => {
     mockedSystemApi.getRuntime.mockResolvedValue({});
     mockedSystemApi.getConfigCheck.mockResolvedValue({});
     mockedSystemApi.getTasks.mockResolvedValue({ items: [] });
@@ -102,12 +97,12 @@ describe('useSystemRuntime', () => {
       pending_changes: 0,
       items: [],
     });
-    mockedSystemApi.createEventsSource.mockReturnValue(null as unknown as EventSource);
 
     const { result } = renderHook(() => useSystemRuntime(true, 60_000));
 
     await waitFor(() => {
-      expect(result.current.meta.pollingFallback).toBe(true);
+      expect(result.current.meta.pollingFallback).toBe(false);
     });
+    expect(result.current.eventsConnected).toBe(false);
   });
 });

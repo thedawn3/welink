@@ -10,6 +10,7 @@ services:
       - ${WELINK_ANALYSIS_DATA_DIR:-./decrypted}:/app/analysis-data
       - ${WELINK_WORK_DIR:-./.tmp/welink-workdir}:/app/workdir
       - ${WELINK_MSG_DIR:-./.tmp/welink-empty-msg}:/app/msg:ro
+      - ${WELINK_WECHAT_DECRYPT_DIR:-./.tmp/welink-empty-wechat-decrypt}:/app/wechat-decrypt:ro
       - ./config.yaml:/app/config.yaml:ro
     environment:
       - GIN_MODE=${WELINK_GIN_MODE:-release}
@@ -19,6 +20,11 @@ services:
       - WELINK_ANALYSIS_DATA_DIR=/app/analysis-data
       - WELINK_WORK_DIR=/app/workdir
       - WELINK_MSG_DIR=/app/msg
+      - WELINK_WECHAT_DECRYPT_DIR=${WELINK_WECHAT_DECRYPT_DIR:-}
+      - WELINK_WECHAT_DECRYPT_MOUNT_DIR=/app/wechat-decrypt
+      - WELINK_IMAGE_AES_KEY=${WELINK_IMAGE_AES_KEY:-}
+      - WELINK_IMAGE_AES_KEY_FILE=${WELINK_IMAGE_AES_KEY_FILE:-}
+      - WELINK_WECHAT_DECRYPT_CONFIG=${WELINK_WECHAT_DECRYPT_CONFIG:-}
       - WELINK_INGEST_ENABLED=${WELINK_INGEST_ENABLED:-false}
       - WELINK_PLATFORM=${WELINK_PLATFORM:-auto}
       - WELINK_SYNC_ENABLED=${WELINK_SYNC_ENABLED:-false}

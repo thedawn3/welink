@@ -1,7 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock3, Loader2 } from 'lucide-react';
-import type { ChatMessage, ContactHistoryMessage, ContactHistoryPage, ContactHistoryRawResponse } from '../../types';
-import { contactsApi } from '../../services/api';
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Clock3, Loader2 } from "lucide-react";
+import type {
+  ChatMessage,
+  ContactHistoryMessage,
+  ContactHistoryPage,
+  ContactHistoryRawResponse,
+} from "../../types";
+import { contactsApi } from "../../services/api";
+import { ChatMessageBubble } from "../chat/ChatMessageBubble";
 
 interface ContactTimelinePanelProps {
   username: string;
@@ -14,8 +20,8 @@ interface ContactTimelinePanelProps {
 }
 
 function asNumber(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
     const num = Number(value);
     if (Number.isFinite(num)) return num;
   }
@@ -23,38 +29,68 @@ function asNumber(value: unknown): number | undefined {
 }
 
 function toUnix(date: string, time: string, fallback = 0): number {
-  const full = `${date} ${time || '00:00'}`;
+  const full = `${date} ${time || "00:00"}`;
   const ts = new Date(full).getTime();
   if (!Number.isFinite(ts)) return fallback;
   return Math.floor(ts / 1000);
 }
 
-function toHistoryMessage(raw: Record<string, unknown>, idx: number): ContactHistoryMessage | null {
+function toHistoryMessage(
+  raw: Record<string, unknown>,
+  idx: number,
+): ContactHistoryMessage | null {
   const contentRaw = raw.content;
-  const content = typeof contentRaw === 'string' ? contentRaw : '';
+  const content = typeof contentRaw === "string" ? contentRaw : "";
   if (!content.trim()) return null;
 
   const dateRaw = raw.date;
-  const date = typeof dateRaw === 'string' && dateRaw.trim() ? dateRaw.trim() : '';
+  const date =
+    typeof dateRaw === "string" && dateRaw.trim() ? dateRaw.trim() : "";
   const timeRaw = raw.time;
-  const time = typeof timeRaw === 'string' && timeRaw.trim() ? timeRaw.trim() : '00:00';
-  const ts = asNumber(raw.timestamp) ?? asNumber(raw.ts) ?? (date ? toUnix(date, time, idx) : idx);
+  const time =
+    typeof timeRaw === "string" && timeRaw.trim() ? timeRaw.trim() : "00:00";
+  const ts =
+    asNumber(raw.timestamp) ??
+    asNumber(raw.ts) ??
+    (date ? toUnix(date, time, idx) : idx);
 
   return {
-    id: typeof raw.id === 'string' && raw.id.trim() ? raw.id : undefined,
+    id: typeof raw.id === "string" && raw.id.trim() ? raw.id : undefined,
     date: date || new Date(ts * 1000).toISOString().slice(0, 10),
     time,
     ts,
     content,
     is_mine: Boolean(raw.is_mine),
     type: asNumber(raw.type) ?? 1,
+    media_kind:
+      raw.media_kind === "image" ||
+      raw.media_kind === "video" ||
+      raw.media_kind === "file"
+        ? raw.media_kind
+        : undefined,
+    thumb_url:
+      typeof raw.thumb_url === "string" && raw.thumb_url.trim()
+        ? raw.thumb_url
+        : undefined,
+    media_url:
+      typeof raw.media_url === "string" && raw.media_url.trim()
+        ? raw.media_url
+        : undefined,
+    media_status:
+      typeof raw.media_status === "string" && raw.media_status.trim()
+        ? raw.media_status
+        : undefined,
   };
 }
 
-function normalizeHistoryPage(raw: ContactHistoryRawResponse): ContactHistoryPage {
+function normalizeHistoryPage(
+  raw: ContactHistoryRawResponse,
+): ContactHistoryPage {
   if (Array.isArray(raw)) {
     const messages = raw
-      .map((item, idx) => toHistoryMessage(item as unknown as Record<string, unknown>, idx))
+      .map((item, idx) =>
+        toHistoryMessage(item as unknown as Record<string, unknown>, idx),
+      )
       .filter((item): item is ContactHistoryMessage => Boolean(item));
     return {
       messages,
@@ -62,32 +98,43 @@ function normalizeHistoryPage(raw: ContactHistoryRawResponse): ContactHistoryPag
     };
   }
 
-  const candidates = (raw.messages ?? raw.items ?? raw.list ?? []) as ContactHistoryMessage[];
+  const candidates = (raw.messages ??
+    raw.items ??
+    raw.list ??
+    []) as ContactHistoryMessage[];
   const messages = candidates
-    .map((item, idx) => toHistoryMessage(item as unknown as Record<string, unknown>, idx))
+    .map((item, idx) =>
+      toHistoryMessage(item as unknown as Record<string, unknown>, idx),
+    )
     .filter((item): item is ContactHistoryMessage => Boolean(item));
 
   return {
     messages,
-    has_more: typeof raw.has_more === 'boolean'
-      ? raw.has_more
-      : (typeof raw.hasMore === 'boolean' ? raw.hasMore : messages.length > 0),
+    has_more:
+      typeof raw.has_more === "boolean"
+        ? raw.has_more
+        : typeof raw.hasMore === "boolean"
+          ? raw.hasMore
+          : messages.length > 0,
   };
 }
 
 function messageKey(msg: ContactHistoryMessage): string {
   return [
-    msg.id ?? '',
-    msg.ts ?? '',
+    msg.id ?? "",
+    msg.ts ?? "",
     msg.date,
     msg.time,
-    msg.is_mine ? '1' : '0',
+    msg.is_mine ? "1" : "0",
     msg.type,
     msg.content,
-  ].join('|');
+  ].join("|");
 }
 
-function mergeMessages(base: ContactHistoryMessage[], incoming: ContactHistoryMessage[]): ContactHistoryMessage[] {
+function mergeMessages(
+  base: ContactHistoryMessage[],
+  incoming: ContactHistoryMessage[],
+): ContactHistoryMessage[] {
   const map = new Map<string, ContactHistoryMessage>();
   for (const item of [...base, ...incoming]) {
     map.set(messageKey(item), item);
@@ -116,8 +163,10 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
   const [loadingFocus, setLoadingFocus] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const [activeFocusDate, setActiveFocusDate] = useState<string | undefined>(undefined);
-  const [jumpDate, setJumpDate] = useState('');
+  const [activeFocusDate, setActiveFocusDate] = useState<string | undefined>(
+    undefined,
+  );
+  const [jumpDate, setJumpDate] = useState("");
 
   const dayRefs = useRef<Record<string, HTMLElement | null>>({});
   const focusFetchedRef = useRef<Record<string, boolean>>({});
@@ -128,13 +177,16 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
       if (!grouped.has(msg.date)) grouped.set(msg.date, []);
       grouped.get(msg.date)!.push(msg);
     }
-    return Array.from(grouped.entries()).map(([date, items]) => ({ date, items }));
+    return Array.from(grouped.entries()).map(([date, items]) => ({
+      date,
+      items,
+    }));
   }, [messages]);
 
   const tryScrollToDate = (date: string): boolean => {
     const node = dayRefs.current[date];
     if (!node) return false;
-    node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    node.scrollIntoView({ behavior: "smooth", block: "start" });
     setActiveFocusDate(date);
     return true;
   };
@@ -143,14 +195,16 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
     setLoadingInitial(true);
     setError(null);
     try {
-      const raw = await contactsApi.getMessageHistory(username, { limit: pageSize });
+      const raw = await contactsApi.getMessageHistory(username, {
+        limit: pageSize,
+      });
       const page = normalizeHistoryPage(raw);
       const sorted = page.messages.sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
       setMessages(sorted);
       setHasMore(page.messages.length >= pageSize && Boolean(page.has_more));
     } catch (err) {
-      console.error('Failed to fetch message history', err);
-      setError('聊天记录暂时加载失败，请稍后再试');
+      console.error("Failed to fetch message history", err);
+      setError("聊天记录暂时加载失败，请稍后再试");
       setMessages([]);
       setHasMore(false);
     } finally {
@@ -172,12 +226,16 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
       const page = normalizeHistoryPage(raw);
       const incoming = page.messages.sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
       setMessages((current) => mergeMessages(current, incoming));
-      if (!page.has_more || incoming.length === 0 || incoming.length < pageSize) {
+      if (
+        !page.has_more ||
+        incoming.length === 0 ||
+        incoming.length < pageSize
+      ) {
         setHasMore(false);
       }
     } catch (err) {
-      console.error('Failed to load older messages', err);
-      setError('加载更早消息失败，请重试');
+      console.error("Failed to load older messages", err);
+      setError("加载更早消息失败，请重试");
     } finally {
       setLoadingMore(false);
     }
@@ -187,7 +245,7 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
     setMessages([]);
     setHasMore(true);
     setActiveFocusDate(undefined);
-    setJumpDate('');
+    setJumpDate("");
     focusFetchedRef.current = {};
     void loadLatest();
   }, [username]);
@@ -210,10 +268,19 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
 
     focusFetchedRef.current[targetDate] = true;
     setLoadingFocus(true);
-    contactsApi.getDayMessages(username, targetDate)
+    contactsApi
+      .getDayMessages(username, targetDate)
       .then((dayMessages: ChatMessage[]) => {
         const mapped = (dayMessages ?? [])
-          .map((item, idx) => toHistoryMessage({ ...(item as unknown as Record<string, unknown>), date: targetDate }, idx))
+          .map((item, idx) =>
+            toHistoryMessage(
+              {
+                ...(item as unknown as Record<string, unknown>),
+                date: targetDate,
+              },
+              idx,
+            ),
+          )
           .filter((item): item is ContactHistoryMessage => Boolean(item));
         if (mapped.length === 0) return;
         setMessages((current) => mergeMessages(current, mapped));
@@ -222,7 +289,7 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
         }, 80);
       })
       .catch((err) => {
-        console.error('Failed to focus target day', err);
+        console.error("Failed to focus target day", err);
       })
       .finally(() => setLoadingFocus(false));
   };
@@ -233,11 +300,13 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
   }, [focusDate, focusKey, username]);
 
   return (
-    <section className={`space-y-4 ${className ?? ''}`}>
+    <section className={`space-y-4 ${className ?? ""}`}>
       <div className="rounded-2xl border border-gray-100 bg-[#f8f9fb] px-4 py-3 flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-black text-[#1d1d1f]">聊天记录时间线</p>
-          <p className="text-xs text-gray-500 mt-0.5">按日期分组，双向消息顺序阅读；可继续加载更早记录</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            按日期分组，双向消息顺序阅读；可继续加载更早记录
+          </p>
         </div>
         <div className="flex flex-col items-end gap-2">
           {activeFocusDate ? (
@@ -278,7 +347,7 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
             onClick={() => void loadOlder()}
             className="px-4 py-2 rounded-full border border-gray-200 bg-white text-sm font-semibold text-gray-600 hover:border-[#07c16066] hover:text-[#07c160] disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {loadingMore ? '加载中...' : '加载更早消息'}
+            {loadingMore ? "加载中..." : "加载更早消息"}
           </button>
         </div>
       )}
@@ -300,11 +369,13 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
           groupedMessages.map((group) => (
             <section
               key={group.date}
-              ref={(node) => { dayRefs.current[group.date] = node; }}
+              ref={(node) => {
+                dayRefs.current[group.date] = node;
+              }}
               className={`rounded-2xl border p-3 sm:p-4 ${
                 activeFocusDate === group.date
-                  ? 'border-[#07c16066] bg-[#f3fff8]'
-                  : 'border-gray-100 bg-white'
+                  ? "border-[#07c16066] bg-[#f3fff8]"
+                  : "border-gray-100 bg-white"
               }`}
             >
               <div className="sticky top-0 z-[1] mb-2.5 inline-flex rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold text-gray-500 shadow-sm border border-gray-100">
@@ -312,21 +383,24 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
               </div>
               <div className="space-y-2">
                 {group.items.map((msg, index) => (
-                  <div key={`${messageKey(msg)}-${index}`} className={`flex items-end gap-2 ${msg.is_mine ? 'flex-row-reverse' : 'flex-row'}`}>
-                    <div className={`w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[9px] font-black ${
-                      msg.is_mine ? 'bg-[#07c160]' : 'bg-[#576b95]'
-                    }`}>
-                      {msg.is_mine ? '我' : contactName.charAt(0)}
+                  <div
+                    key={`${messageKey(msg)}-${index}`}
+                    className={`flex items-end gap-2 ${msg.is_mine ? "flex-row-reverse" : "flex-row"}`}
+                  >
+                    <div
+                      className={`w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[9px] font-black ${
+                        msg.is_mine ? "bg-[#07c160]" : "bg-[#576b95]"
+                      }`}
+                    >
+                      {msg.is_mine ? "我" : contactName.charAt(0)}
                     </div>
-                    <div className={`flex flex-col gap-0.5 max-w-[78%] ${msg.is_mine ? 'items-end' : 'items-start'}`}>
-                      <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed break-words whitespace-pre-wrap ${
-                        msg.is_mine
-                          ? 'bg-[#07c160] text-white rounded-br-sm'
-                          : 'bg-[#f0f0f0] text-[#1d1d1f] rounded-bl-sm'
-                      } ${msg.type !== 1 ? 'italic text-xs' : ''}`}>
-                        {msg.content}
-                      </div>
-                      <span className="text-[10px] text-gray-300 px-1">{msg.time}</span>
+                    <div
+                      className={`flex flex-col gap-0.5 max-w-[78%] ${msg.is_mine ? "items-end" : "items-start"}`}
+                    >
+                      <ChatMessageBubble message={msg} isMine={msg.is_mine} />
+                      <span className="text-[10px] text-gray-300 px-1">
+                        {msg.time}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -335,7 +409,9 @@ export const ContactTimelinePanel: React.FC<ContactTimelinePanelProps> = ({
           ))
         )}
         {loadingFocus && (
-          <div className="text-center text-xs text-gray-400 py-2">正在定位指定日期聊天记录...</div>
+          <div className="text-center text-xs text-gray-400 py-2">
+            正在定位指定日期聊天记录...
+          </div>
         )}
       </div>
     </section>

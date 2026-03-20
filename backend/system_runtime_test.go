@@ -121,6 +121,105 @@ func TestSystemConfigCheckEndpointReportsLayoutAndSNS(t *testing.T) {
 	if primary, _ := payload["primary_issue"].(string); strings.TrimSpace(primary) != "" {
 		t.Fatalf("expected empty primary_issue, got %#v", payload["primary_issue"])
 	}
+	media, ok := payload["media"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected media object, got %#v", payload["media"])
+	}
+	if preview, _ := media["preview_state"].(string); preview != "disabled" {
+		t.Fatalf("expected preview_state=disabled without msg dir, got %#v", media["preview_state"])
+	}
+}
+
+func TestInspectMediaConfigReportsPartialWhenV2ImagesNeedAES(t *testing.T) {
+	msgDir := t.TempDir()
+	v2Path := filepath.Join(msgDir, "attach", "hash", "2026-03", "Img", "sample_t.dat")
+	mustWriteBytes(t, v2Path, []byte{0x07, 0x08, 'V', '2', 0x08, 0x07, 0x00})
+
+	media := inspectMediaConfig(msgDir)
+	if media.PreviewState != "partial" {
+		t.Fatalf("expected partial preview state, got %+v", media)
+	}
+	if !media.V2ImagesDetected {
+		t.Fatalf("expected v2_images_detected=true, got %+v", media)
+	}
+	if media.ImageAESKeyConfigured {
+		t.Fatalf("expected image_aes_key_configured=false, got %+v", media)
+	}
+}
+
+func TestInspectMediaConfigReportsReadyWhenAESConfigured(t *testing.T) {
+	t.Setenv("WELINK_IMAGE_AES_KEY", "1234567890abcdef")
+	msgDir := t.TempDir()
+	v2Path := filepath.Join(msgDir, "attach", "hash", "2026-03", "Img", "sample.dat")
+	mustWriteBytes(t, v2Path, []byte{0x07, 0x08, 'V', '2', 0x08, 0x07, 0x00})
+
+	media := inspectMediaConfig(msgDir)
+	if media.PreviewState != "ready" {
+		t.Fatalf("expected ready preview state, got %+v", media)
+	}
+	if !media.ImageAESKeyConfigured {
+		t.Fatalf("expected image_aes_key_configured=true, got %+v", media)
+	}
+	if media.ImageAESKeySource != "env:WELINK_IMAGE_AES_KEY" {
+		t.Fatalf("expected image_aes_key_source from env, got %+v", media)
+	}
+	if media.ImageKeyMode != "single" || media.ImageKeyCount != 1 {
+		t.Fatalf("expected single key mode, got %+v", media)
+	}
+}
+
+func TestInspectMediaConfigReadsAESKeyFromFile(t *testing.T) {
+	keyFile := filepath.Join(t.TempDir(), "image-key.txt")
+	if err := os.WriteFile(keyFile, []byte("1234567890abcdef\n"), 0o644); err != nil {
+		t.Fatalf("write key file: %v", err)
+	}
+	t.Setenv("WELINK_IMAGE_AES_KEY_FILE", keyFile)
+
+	msgDir := t.TempDir()
+	v2Path := filepath.Join(msgDir, "attach", "hash", "2026-03", "Img", "sample.dat")
+	mustWriteBytes(t, v2Path, []byte{0x07, 0x08, 'V', '2', 0x08, 0x07, 0x00})
+
+	media := inspectMediaConfig(msgDir)
+	if media.PreviewState != "ready" {
+		t.Fatalf("expected ready preview state from file key, got %+v", media)
+	}
+	if !media.ImageAESKeyConfigured {
+		t.Fatalf("expected image_aes_key_configured=true from file, got %+v", media)
+	}
+	if media.ImageAESKeySource != "file:"+keyFile {
+		t.Fatalf("expected image_aes_key_source=file, got %+v", media)
+	}
+}
+
+func TestInspectMediaConfigReadsImageKeyMapFromWechatDecryptDir(t *testing.T) {
+	toolDir := t.TempDir()
+	mapPath := filepath.Join(toolDir, "image_keys.json")
+	if err := os.WriteFile(mapPath, []byte("{\n  \"00112233445566778899aabbccddeeff\": \"1234567890abcdef1234567890abcdef\"\n}\n"), 0o644); err != nil {
+		t.Fatalf("write key map: %v", err)
+	}
+	t.Setenv("WELINK_WECHAT_DECRYPT_DIR", toolDir)
+	t.Setenv("WELINK_WECHAT_DECRYPT_MOUNT_DIR", toolDir)
+
+	msgDir := t.TempDir()
+	v2Path := filepath.Join(msgDir, "attach", "hash", "2026-03", "Img", "sample.dat")
+	mustWriteBytes(t, v2Path, []byte{0x07, 0x08, 'V', '2', 0x08, 0x07, 0x00})
+
+	media := inspectMediaConfig(msgDir)
+	if media.PreviewState != "ready" {
+		t.Fatalf("expected ready preview state from key map, got %+v", media)
+	}
+	if !media.ImageAESKeyConfigured {
+		t.Fatalf("expected image_aes_key_configured=true from key map, got %+v", media)
+	}
+	if media.ImageKeyMode != "map" || media.ImageKeyCount != 1 {
+		t.Fatalf("expected key map mode, got %+v", media)
+	}
+	if media.WechatDecryptDir != toolDir {
+		t.Fatalf("expected wechat_decrypt_dir=%q, got %+v", toolDir, media)
+	}
+	if media.ImageAESKeySource != "file:"+mapPath {
+		t.Fatalf("expected image_aes_key_source=file:%s, got %+v", mapPath, media)
+	}
 }
 
 func TestHandleStartDecryptRejectsInvalidSourceLayout(t *testing.T) {
@@ -1215,6 +1314,16 @@ func mustWriteFile(t *testing.T, path string, content string) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+}
+
+func mustWriteBytes(t *testing.T, path string, content []byte) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 }

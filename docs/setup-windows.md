@@ -1,131 +1,175 @@
 # Windows 使用指南
 
-## 1. 先把手机聊天记录迁移到电脑微信
+本页只负责 Windows 平台差异。Docker 模式、`.env`、目录契约、红色阻塞错误，以 [`deploy-docker.md`](./deploy-docker.md) 和 [`data-layout-and-troubleshooting.md`](./data-layout-and-troubleshooting.md) 为准。
 
-手机微信 -> 我 -> 设置 -> 通用 -> 聊天记录迁移与备份 -> 迁移到电脑。
+## 1. Windows 一键部署前提
 
-## 2. 准备解密产物
+在 Windows 机器上让 AI 拉仓并启动前，先确认：
 
-默认仍建议使用 [ylytdeng/wechat-decrypt](https://github.com/ylytdeng/wechat-decrypt)。
+- 已安装 Git
+- 已安装 Docker Desktop，且 `docker compose version` 可用
+- 已安装 Python，且 `py -3` 或 `python` 至少有一个在 `PATH`
+- 当前 PowerShell 会话已执行：
 
-请按该项目的 Windows 说明完成解密，最终准备出：
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+```
+
+说明：
+
+- 这条执行策略命令按当前 PowerShell 会话生效；换新终端后可以重新执行一次
+- `scripts/welink-doctor.ps1` 会调用 Python 生成 `.env`，所以没有 Python 时脚本不会继续
+- Windows 路径统一建议写成正斜杠，例如 `C:/Users/you/...`
+
+## 2. 先判断你属于哪种正式模式
+
+### `analysis-only`
+
+适合你已经有一个可直接分析的标准目录：
 
 ```text
-decrypted/
+<STANDARD_DIR>/
 ├── contact/contact.db
 ├── message/message_*.db
 └── sns/sns.db                 # optional
 ```
 
-### Docker 模式补充（重要）
+这种模式下：
 
-Docker 下建议使用手动同步标准目录模式，容器内不负责抓取原始微信目录。
+- 只给 WeLink 一个 `analysis directory`
+- 不提供 `source standard directory`
+- Docker 不做容器内自动解密 / watcher
 
-- 容器外工具先准备标准目录（`contact/message`，可选 `sns`）
-- 再按 [deploy-docker.md](./deploy-docker.md) 的映射方式启动 WeLink
-- 启动后优先检查 `/api/system/config-check` 和 `/api/system/runtime`
+### `manual-sync`
 
-## 3. 生成 .env 并校验目录
+适合你除了 analysis 目录，还想额外提供另一个 source 标准目录，供 WeLink 在系统页执行手动同步。
 
-PowerShell 中执行：
+注意：
+
+- `source` 和 `analysis` 都必须是标准目录
+- `source` 不能直接指向 `xwechat_files` 根目录
+- `source` 与 `analysis` 不能是同一路径
+
+## 3. Windows AI 一键启动命令
+
+### `analysis-only`
 
 ```powershell
+git clone https://github.com/thedawn3/welink.git
 cd welink
-.\scripts\welink-doctor.ps1 -WriteEnv
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\start-welink.ps1 `
+  -Mode analysis-only `
+  -DataDir 'C:/absolute/path/to/analysis_standard_dir' `
+  -MsgDir 'C:/absolute/path/to/msg' `
+  -WechatDecryptDir 'C:/absolute/path/to/wechat-decrypt'
 ```
 
-如需手动指定路径，建议使用正斜杠：
+### `manual-sync`
 
 ```powershell
-.\scripts\welink-doctor.ps1 `
-  -DataDir 'C:/Users/you/work/wechat-decrypt/decrypted_with_wal' `
-  -MsgDir 'C:/Users/you/Documents/WeChat Files/wxid_xxx/msg' `
-  -WriteEnv
+git clone https://github.com/thedawn3/welink.git
+cd welink
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\start-welink.ps1 `
+  -Mode manual-sync `
+  -DataDir 'C:/absolute/path/to/analysis_standard_dir' `
+  -SourceDataDir 'C:/absolute/path/to/source_standard_dir' `
+  -MsgDir 'C:/absolute/path/to/msg' `
+  -WechatDecryptDir 'C:/absolute/path/to/wechat-decrypt'
 ```
 
-### 可选：启用 WeLink 自动解密 / 自动刷新链路
+可选参数说明：
 
-Windows 是这一阶段自动刷新吸收最新消息的重点场景。若你希望 WeLink 启动后自动监听增量并触发重建，可在 `.env` 中确认这些值：
+- `-MsgDir`：可省略；省略后不影响文本分析，但聊天图片缩略图 / 点击查看不可用
+- `-WechatDecryptDir`：可省略；省略后不影响基础部署，但 V2 图片不会自动读取 `image_keys.json`
 
-```env
-WELINK_INGEST_ENABLED=true
-WELINK_SOURCE_DATA_DIR=C:/Users/you/work/wechat-decrypt/decrypted_with_wal
-WELINK_ANALYSIS_DATA_DIR=C:/Users/you/work/welink-analysis
-WELINK_DECRYPT_ENABLED=true
-WELINK_DECRYPT_AUTO_START=true
-WELINK_SYNC_ENABLED=true
-WELINK_SYNC_WATCH_WAL=true
-```
+## 4. WeLink 需要的目录，不是微信原始目录
 
-说明：
+最容易误导 AI 的地方只有一个：
 
-- `WELINK_SOURCE_DATA_DIR` 可以指向带 `message_*.db-wal` 的目录
-- `WELINK_ANALYSIS_DATA_DIR` 建议单独准备，避免分析过程与源目录互相干扰
-- 若你配置了 `WELINK_WINDOWS_DECRYPT_COMMAND`，运行时会优先使用该命令；否则 provider 为 `builtin` 时会走内置 stage
+- `-SourceDataDir` 或 `-DataDir` 需要的是标准目录根
+- 不是 `xwechat_files` 根目录
+- 不是 `WeChat Files` 整个用户目录
 
-## 4. 启动
+传错时，典型结果是：
+
+- doctor 直接报缺少 `contact/contact.db` 或 `message/message_*.db`
+- 后端 `config-check` 提示 source 不是标准目录
+- 系统页拒绝启动同步
+
+如果你只有微信原始目录，先用容器外工具整理成标准目录，再把标准目录传给 WeLink。
+
+## 5. 启动后只看这几条验收命令
 
 ```powershell
-docker compose up --build
-```
-
-或者直接：
-
-```powershell
-.\scripts\start-welink.ps1
-```
-
-## 5. 校验
-
-```powershell
+docker compose ps
 curl http://localhost:8080/api/health
+curl http://localhost:8080/api/system/config-check
 curl http://localhost:8080/api/system/runtime
-curl http://localhost:8080/api/status
+curl http://localhost:8080/api/system/logs
 ```
 
-若你改了 `.env` 里的端口，请把上面的 `8080` 替换成实际 `WELINK_BACKEND_PORT`。
+判断标准：
 
-优先观察 `/api/system/runtime`：
+- `docker compose ps` 中前后端容器都在运行
+- `/api/system/config-check` 没有阻塞项，或明确显示当前是正常的 `analysis-only`
+- `/api/system/runtime` 中 `is_initialized=true`
+- `/api/system/logs` 没有持续报目录/权限/路径错误
 
-- `is_initialized=true` 表示当前索引已可供前端 / MCP 使用
-- `decrypt_state` 可判断当前是否正在解密、已就绪或失败
-- `data_revision` 单调递增，代表最新一次数据刷新版本
+## 6. Windows 平台常见坑
 
-`/api/status` 仍保留为兼容接口；若你后面要接 MCP / AI，仍建议以 `/api/system/runtime` 为准。索引未完成前，AI 看到的数据也不完整。
+### PowerShell 拒绝执行脚本
 
-如需观察实时刷新，可额外执行：
+先在当前终端执行：
 
 ```powershell
-curl -N http://localhost:8080/api/events
+Set-ExecutionPolicy -Scope Process Bypass -Force
 ```
 
-## 可选：启用自动解密 + 自动刷新链路
+### `docker compose` 不可用
 
-要让 Windows 一键启动解密命令并把 `analysis` 目录维持最新消息，可以向 `.env` 添加：
+WeLink 脚本要求的是 Docker Compose v2，也就是：
 
-```env
-WELINK_INGEST_ENABLED=true
-WELINK_SOURCE_DATA_DIR=C:/Users/you/wechat/source
-WELINK_ANALYSIS_DATA_DIR=C:/Users/you/wechat/analysis
-WELINK_SYNC_ENABLED=true
-WELINK_SYNC_WATCH_WAL=true
-WELINK_DECRYPT_ENABLED=true
-WELINK_DECRYPT_AUTO_START=true
-WELINK_WINDOWS_DECRYPT_COMMAND="python decrypt.py --input ${source_data_dir} --output ${analysis_data_dir}"
+```powershell
+docker compose version
 ```
 
-该配置会先从源目录拉取 `.db`/`.db-wal`，`sync` 将它们 debounce 成 `revision` 并触发 `analysis` 重建；`runtime` 会实时更新 `decrypt_state` 与 `data_revision`。
+如果这里只有旧版 `docker-compose`，先在 Docker Desktop 里启用 Compose v2，再继续。
 
-如果你用的是 `auto_refresh=true` 但同步监听未配置或启动失败，解密任务仍可能成功启动；这时要优先看 `GET /api/system/logs` 里是否出现 `warn/sync`，而不是只看 `last_error`。
+### doctor 报找不到 Python
 
-确认管道：
+`scripts/welink-doctor.ps1` 依赖 Python 运行 `scripts/welink_doctor.py`。请先确保以下命令至少一个可用：
 
-- `/api/system/runtime` 中 `decrypt_state` 走 `running`→`ready`
-- `/api/system/changes` 中 `pending_changes` 回零，`data_revision` 递增
-- `curl -N http://localhost:8080/api/events` 会看到 `runtime.revision.detected`/`runtime.decrypt.finished`
+```powershell
+py -3 --version
+python --version
+```
 
-## Windows 注意事项
+### 挂载失败或容器看不到目录
 
-- `.env` 里的路径建议统一写成正斜杠，例如 `C:/Users/...`。
-- 若 Docker Desktop 报挂载失败，先确认对应盘符已授权给 Docker。
-- 若媒体目录缺失，可先留空 `WELINK_MSG_DIR`，不影响文本分析。
+先检查：
+
+- Docker Desktop 是否已授权对应盘符
+- 路径是否写成 `C:/...` 这种正斜杠形式
+- 目标目录是否真实存在
+
+### source / analysis 写成了同一路径
+
+这会被后端阻止，因为会污染分析目录。请分开两个目录，或退回 `analysis-only`。
+
+## 7. 图片与 SNS
+
+- `ylytdeng/wechat-decrypt` 已验证可产出 `sns/sns.db`
+- `WELINK_MSG_DIR` 正确时，聊天流可回溯图片
+- `WELINK_WECHAT_DECRYPT_DIR` 正确时，WeLink 会自动尝试读取 `image_keys.json` / `config.json`
+
+如果图片仍只显示 `[图片]`，优先回到 [`data-layout-and-troubleshooting.md`](./data-layout-and-troubleshooting.md) 查看图片 key 排障，不要先怀疑部署流程。
+
+## 8. 下一步
+
+Windows 上只要部署验收通过，接下来按这个顺序继续：
+
+1. 打开前端：`http://localhost:3000`
+2. 在系统页确认 `config-check` 与 `runtime`
+3. 如需 AI 查询，再接 [`../mcp-server/README.md`](../mcp-server/README.md)

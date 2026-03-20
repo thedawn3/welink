@@ -6,11 +6,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { globalApi } from '../services/api';
 import type { BackendStatus } from '../types';
 
-export const useBackendStatus = (pollInterval = 1000) => {
+export const useBackendStatus = (_pollInterval = 1000) => {
   const [status, setStatus] = useState<BackendStatus | null>(null);
   const [backendReady, setBackendReady] = useState(false); // 后端可连通
   const [error, setError] = useState<Error | null>(null);
-  const timerRef = useRef<number | null>(null);
+  const mountedRef = useRef(false);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -18,14 +18,6 @@ export const useBackendStatus = (pollInterval = 1000) => {
       setStatus(data);
       setBackendReady(true);
       setError(null);
-
-      // 初始化完成后停止轮询
-      if (data.is_initialized) {
-        if (timerRef.current) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
-      }
     } catch (err) {
       setError(err as Error);
       console.error('Failed to fetch backend status:', err);
@@ -33,20 +25,14 @@ export const useBackendStatus = (pollInterval = 1000) => {
   }, []);
 
   const startPolling = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(fetchStatus, pollInterval);
-  }, [fetchStatus, pollInterval]);
+    void fetchStatus();
+  }, [fetchStatus]);
 
   useEffect(() => {
-    fetchStatus();
-    timerRef.current = setInterval(fetchStatus, pollInterval);
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [fetchStatus, pollInterval]);
+    if (mountedRef.current) return;
+    mountedRef.current = true;
+    void fetchStatus();
+  }, [fetchStatus]);
 
   return {
     status,

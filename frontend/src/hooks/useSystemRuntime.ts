@@ -20,23 +20,7 @@ const parseArrayPayload = <T>(value: MaybeArrayPayload<T>): T[] => {
   return [];
 };
 
-const parseEvent = (raw: string): RuntimeEvent => {
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return {
-      type: String(parsed.type ?? 'message'),
-      id: typeof parsed.id === 'string' || typeof parsed.id === 'number' ? String(parsed.id) : undefined,
-      at: typeof parsed.at === 'string' ? parsed.at : undefined,
-      revision: typeof parsed.revision === 'string' || typeof parsed.revision === 'number' ? parsed.revision : undefined,
-      message: typeof parsed.message === 'string' ? parsed.message : raw,
-      payload: parsed,
-    };
-  } catch {
-    return { type: 'message', message: raw };
-  }
-};
-
-export const useSystemRuntime = (enabled = true, pollInterval = 5000) => {
+export const useSystemRuntime = (enabled = true, _pollInterval = 5000) => {
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null);
   const [configCheck, setConfigCheck] = useState<RuntimeConfigCheck | null>(null);
   const [changes, setChanges] = useState<RuntimeChanges | null>(null);
@@ -44,15 +28,15 @@ export const useSystemRuntime = (enabled = true, pollInterval = 5000) => {
   const [logs, setLogs] = useState<RuntimeLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [eventsConnected, setEventsConnected] = useState(false);
+  const [eventsConnected] = useState(false);
   const [latestEvent, setLatestEvent] = useState<RuntimeEvent | null>(null);
   const [lastEventAt, setLastEventAt] = useState<string | undefined>(undefined);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | undefined>(undefined);
   const [lastRefreshReason, setLastRefreshReason] = useState<string | undefined>(undefined);
-  const [pollingFallback, setPollingFallback] = useState(false);
-  const sourceRef = useRef<EventSource | null>(null);
+  const [pollingFallback] = useState(false);
+  const mountedRef = useRef(false);
 
-  const refresh = useCallback(async (reason = 'poll') => {
+  const refresh = useCallback(async (reason = 'manual') => {
     if (!enabled) return;
     setLoading(true);
     try {
@@ -73,6 +57,8 @@ export const useSystemRuntime = (enabled = true, pollInterval = 5000) => {
       const parsedLogs = parseArrayPayload(logRes);
       setLogs(parsedLogs.slice(0, 200));
       setError(null);
+      setLatestEvent(null);
+      setLastEventAt(undefined);
       setLastRefreshAt(new Date().toISOString());
       setLastRefreshReason(reason);
     } catch (err: unknown) {
@@ -85,44 +71,9 @@ export const useSystemRuntime = (enabled = true, pollInterval = 5000) => {
 
   useEffect(() => {
     if (!enabled) return;
+    if (mountedRef.current) return;
+    mountedRef.current = true;
     void refresh('bootstrap');
-    const timer = window.setInterval(() => {
-      void refresh(sourceRef.current ? 'poll-backfill' : 'poll');
-    }, pollInterval);
-    return () => window.clearInterval(timer);
-  }, [enabled, pollInterval, refresh]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    const source = systemApi.createEventsSource();
-    if (!source) {
-      setPollingFallback(true);
-      return;
-    }
-    sourceRef.current = source;
-    setPollingFallback(false);
-
-    source.onopen = () => {
-      setEventsConnected(true);
-      setPollingFallback(false);
-    };
-    source.onmessage = (event) => {
-      const parsed = parseEvent(event.data);
-      setLatestEvent(parsed);
-      setLastEventAt(parsed.at ?? new Date().toISOString());
-      setPollingFallback(false);
-      void refresh('sse');
-    };
-    source.onerror = () => {
-      setEventsConnected(false);
-      setPollingFallback(true);
-    };
-
-    return () => {
-      setEventsConnected(false);
-      source.close();
-      sourceRef.current = null;
-    };
   }, [enabled, refresh]);
 
   const summary = useMemo(() => {

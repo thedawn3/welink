@@ -10,6 +10,7 @@ DATA_DIR="${WELINK_ANALYSIS_DATA_DIR:-${WELINK_DATA_DIR:-}}"
 SOURCE_DATA_DIR="${WELINK_SOURCE_DATA_DIR:-}"
 WORK_DIR="${WELINK_WORK_DIR:-}"
 MSG_DIR="${WELINK_MSG_DIR:-}"
+WECHAT_DECRYPT_DIR="${WELINK_WECHAT_DECRYPT_DIR:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -35,6 +36,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --msg-dir)
       MSG_DIR="$2"
+      shift 2
+      ;;
+    --wechat-decrypt-dir)
+      WECHAT_DECRYPT_DIR="$2"
       shift 2
       ;;
     *)
@@ -69,6 +74,9 @@ fi
 if [ -n "${MSG_DIR}" ]; then
   args+=(--msg-dir "${MSG_DIR}")
 fi
+if [ -n "${WECHAT_DECRYPT_DIR}" ]; then
+  args+=(--wechat-decrypt-dir "${WECHAT_DECRYPT_DIR}")
+fi
 
 read_env_value() {
   local key="$1"
@@ -93,11 +101,15 @@ mode="$(read_env_value WELINK_MODE "${MODE}")"
 resolved_platform="$(read_env_value WELINK_PLATFORM "${PLATFORM}")"
 resolved_source_data_dir="$(read_env_value WELINK_SOURCE_DATA_DIR "${SOURCE_DATA_DIR}")"
 resolved_work_dir="$(read_env_value WELINK_WORK_DIR "${WORK_DIR}")"
+resolved_wechat_decrypt_dir="$(read_env_value WELINK_WECHAT_DECRYPT_DIR "${WECHAT_DECRYPT_DIR}")"
 frontend_port="$(read_env_value WELINK_FRONTEND_PORT 3000)"
 backend_port="$(read_env_value WELINK_BACKEND_PORT 8080)"
 echo "WeLink started."
 echo "Local frontend: http://localhost:${frontend_port}"
 echo "Local backend : http://localhost:${backend_port}"
+if [ -n "${resolved_wechat_decrypt_dir}" ]; then
+  echo "wechat-decrypt: ${resolved_wechat_decrypt_dir}"
+fi
 if [ "${mode}" = "decrypt-first" ]; then
   echo ""
   echo "decrypt-first mode detected."

@@ -1,10 +1,19 @@
 package model
 
+type Gender string
+
+const (
+	GenderMale    Gender = "male"
+	GenderFemale  Gender = "female"
+	GenderUnknown Gender = "unknown"
+)
+
 type Contact struct {
 	Username        string `json:"username"`
 	Nickname        string `json:"nickname"`
 	Remark          string `json:"remark"`
 	Alias           string `json:"alias"`
+	Gender          Gender `json:"gender"`
 	Flag            int    `json:"flag"`
 	Description     string `json:"description"`
 	BigHeadURL      string `json:"big_head_url"`

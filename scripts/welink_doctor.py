@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EMPTY_MSG_DIR = ROOT / '.tmp' / 'welink-empty-msg'
 EMPTY_SOURCE_DIR = ROOT / '.tmp' / 'welink-empty-source'
+EMPTY_WECHAT_DECRYPT_DIR = ROOT / '.tmp' / 'welink-empty-wechat-decrypt'
 DEFAULT_WORK_DIR = ROOT / '.tmp' / 'welink-decrypt-work'
 DEFAULT_ANALYSIS_DIR = ROOT / 'decrypted'
 
@@ -101,6 +102,22 @@ def candidate_msg_dirs(kind: str) -> list[Path]:
     return unique_existing([p for p in paths if str(p) not in {'', '.'}])
 
 
+def candidate_wechat_decrypt_dirs(kind: str) -> list[Path]:
+    home = Path.home()
+    paths = [
+        Path(os.getenv('WELINK_WECHAT_DECRYPT_DIR', '')),
+        ROOT.parents[1] / '.tmp' / 'tools' / 'wechat-decrypt',
+        ROOT.parent / 'wechat-decrypt',
+        home / 'wechat-decrypt',
+        home / 'Downloads' / 'wechat-decrypt',
+    ]
+    if kind == 'windows':
+        paths.extend([
+            home / 'Documents' / 'wechat-decrypt',
+        ])
+    return unique_existing([p for p in paths if str(p) not in {'', '.'}])
+
+
 def validate_data_dir(path: Path) -> tuple[bool, list[str]]:
     issues = []
     if not path.exists():
@@ -122,6 +139,24 @@ def validate_msg_dir(path: Path) -> tuple[bool, list[str]]:
         return False, [f'媒体目录不存在: {path}']
     if not path.is_dir():
         return False, [f'媒体路径不是目录: {path}']
+    return True, []
+
+
+def validate_wechat_decrypt_dir(path: Path) -> tuple[bool, list[str]]:
+    if not path:
+        return True, []
+    if not path.exists():
+        return False, [f'wechat-decrypt 目录不存在: {path}']
+    if not path.is_dir():
+        return False, [f'wechat-decrypt 路径不是目录: {path}']
+    hints = [
+        path / 'config.json',
+        path / 'find_image_key',
+        path / 'find_image_key.py',
+        path / 'main.py',
+    ]
+    if not any(item.exists() for item in hints):
+        return False, [f'目录看起来不是 wechat-decrypt 工具目录: {path}']
     return True, []
 
 
@@ -159,12 +194,15 @@ def write_env_file_v2(
     source_data_dir: Path | None,
     work_dir: Path,
     msg_dir: Path | None,
+    wechat_decrypt_dir: Path | None,
 ) -> Path:
     EMPTY_MSG_DIR.mkdir(parents=True, exist_ok=True)
     EMPTY_SOURCE_DIR.mkdir(parents=True, exist_ok=True)
+    EMPTY_WECHAT_DECRYPT_DIR.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
     env_path = ROOT / '.env'
     msg_value = to_env_path(msg_dir) if msg_dir else './.tmp/welink-empty-msg'
+    wechat_decrypt_value = to_env_path(wechat_decrypt_dir) if wechat_decrypt_dir else ''
     analysis_dir = analysis_data_dir or DEFAULT_ANALYSIS_DIR
     analysis_dir.mkdir(parents=True, exist_ok=True)
     analysis_value = to_env_path(analysis_dir)
@@ -183,6 +221,10 @@ def write_env_file_v2(
         # legacy compatibility
         f'WELINK_DATA_DIR={analysis_value}',
         f'WELINK_MSG_DIR={msg_value}',
+        f'WELINK_WECHAT_DECRYPT_DIR={wechat_decrypt_value}',
+        'WELINK_IMAGE_AES_KEY=',
+        'WELINK_IMAGE_AES_KEY_FILE=',
+        'WELINK_WECHAT_DECRYPT_CONFIG=',
         # new runtime/ingest/sync/decrypt envs
         f'WELINK_MODE={mode}',
         f'WELINK_PLATFORM={kind}',
@@ -209,6 +251,7 @@ def main() -> int:
     parser.add_argument('--source-data-dir')
     parser.add_argument('--work-dir')
     parser.add_argument('--msg-dir')
+    parser.add_argument('--wechat-decrypt-dir')
     parser.add_argument('--write-env', action='store_true')
     args = parser.parse_args()
 
@@ -218,10 +261,12 @@ def main() -> int:
     source_candidates = candidate_source_dirs(kind)
     work_candidates = candidate_work_dirs()
     msg_candidates = candidate_msg_dirs(kind)
+    wechat_decrypt_candidates = candidate_wechat_decrypt_dirs(kind)
     analysis_data_dir = choose_path(args.data_dir, data_candidates)
     source_data_dir = choose_path(args.source_data_dir, source_candidates)
     work_dir = choose_path(args.work_dir, work_candidates) or DEFAULT_WORK_DIR
     msg_dir = choose_path(args.msg_dir, msg_candidates)
+    wechat_decrypt_dir = choose_path(args.wechat_decrypt_dir, wechat_decrypt_candidates)
 
     print(f'[welink-doctor] platform: {kind}')
     print(f'[welink-doctor] mode: {mode}')
@@ -298,6 +343,24 @@ def main() -> int:
     else:
         print('[welink-doctor] msg dir: 未发现，将使用 ./.tmp/welink-empty-msg 占位。')
 
+    if wechat_decrypt_dir:
+        tool_ok, tool_issues = validate_wechat_decrypt_dir(wechat_decrypt_dir)
+        print(f'[welink-doctor] wechat-decrypt dir: {wechat_decrypt_dir}')
+        if not tool_ok:
+            for issue in tool_issues:
+                print(f'  - {issue}')
+            return 1
+        print('[welink-doctor] wechat-decrypt dir ok')
+        image_keys = wechat_decrypt_dir / 'image_keys.json'
+        config_json = wechat_decrypt_dir / 'config.json'
+        if image_keys.is_file():
+            print(f'[welink-doctor] image key map detected: {image_keys}')
+        elif config_json.is_file():
+            print(f'[welink-doctor] config detected: {config_json}')
+            print('[welink-doctor] note: if config.json contains image_aes_key, WeLink will auto-load it; otherwise run find_image_key once.')
+    else:
+        print('[welink-doctor] wechat-decrypt dir: 未发现，将不自动读取 image_keys.json / config.json。')
+
     if args.write_env:
         env_path = write_env_file_v2(
             mode=mode,
@@ -306,6 +369,7 @@ def main() -> int:
             source_data_dir=source_data_dir,
             work_dir=work_dir,
             msg_dir=msg_dir,
+            wechat_decrypt_dir=wechat_decrypt_dir,
         )
         print(f'[welink-doctor] wrote {env_path}')
 

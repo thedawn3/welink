@@ -3,14 +3,18 @@
  */
 
 import React from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 
 interface InitializingScreenProps {
   message?: string;
+  onRefresh?: () => void;
+  onReset?: () => void;
 }
 
 export const InitializingScreen: React.FC<InitializingScreenProps> = ({
   message = '正在初始化数据...',
+  onRefresh,
+  onReset,
 }) => {
   return (
     <div className="fixed inset-0 bg-gradient-to-br from-[#f8f9fb] to-[#e7f8f0] flex items-center justify-center z-50">
@@ -64,8 +68,30 @@ export const InitializingScreen: React.FC<InitializingScreenProps> = ({
 
         {/* Hint */}
         <p className="mt-12 text-xs text-gray-400 font-medium">
-          首次启动需要约 10-30 秒，请耐心等待...
+          已触发初始化任务，请在系统页手动刷新状态查看进度。
         </p>
+
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          {onRefresh ? (
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#07c160] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#06ad56]"
+            >
+              <RefreshCw size={14} />
+              刷新状态
+            </button>
+          ) : null}
+          {onReset ? (
+            <button
+              type="button"
+              onClick={onReset}
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:border-[#07c16060] hover:text-[#07c160]"
+            >
+              重新选择
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <style>{`

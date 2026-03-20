@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, Hand, Loader2, Timer, TrendingUp, type LucideIcon } from 'lucide-react';
 
 export type RelationOverviewListType = 'warming' | 'cooling' | 'initiative' | 'fast_reply';
+export type RelationOverviewGroupKey = 'all' | 'male' | 'female';
 
 export interface RelationOverviewItem {
   username: string;
@@ -21,8 +22,14 @@ export interface RelationOverviewData {
   fast_reply: RelationOverviewItem[];
 }
 
+export interface RelationOverviewGroupedData {
+  all: RelationOverviewData;
+  male: RelationOverviewData;
+  female: RelationOverviewData;
+}
+
 interface RelationOverviewSectionProps {
-  data: RelationOverviewData;
+  data: RelationOverviewGroupedData;
   loading?: boolean;
   emptyText?: string;
   className?: string;
@@ -174,9 +181,11 @@ export const RelationOverviewSection: React.FC<RelationOverviewSectionProps> = (
   className,
   onItemClick,
 }) => {
+  const [activeGroup, setActiveGroup] = useState<RelationOverviewGroupKey>('all');
   const [activeKey, setActiveKey] = useState<RelationOverviewListType>('warming');
+  const activeGroupData = data[activeGroup] ?? data.all;
   const activeMeta = LIST_META.find((meta) => meta.key === activeKey) ?? LIST_META[0];
-  const activeItems = data[activeKey] ?? [];
+  const activeItems = activeGroupData[activeKey] ?? [];
 
   return (
     <section className={`bg-white rounded-3xl border border-gray-100 p-4 sm:p-6 ${className ?? ''}`}>
@@ -189,6 +198,26 @@ export const RelationOverviewSection: React.FC<RelationOverviewSectionProps> = (
           <TrendingUp size={12} />
           客观模式
         </span>
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold text-gray-500">榜单分组</span>
+        {([
+          ['all', '全部'],
+          ['male', '男'],
+          ['female', '女'],
+        ] as [RelationOverviewGroupKey, string][]).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setActiveGroup(key)}
+            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+              activeGroup === key ? 'bg-[#07c160] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="mb-4 flex gap-2 flex-wrap">

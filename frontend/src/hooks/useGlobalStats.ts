@@ -6,7 +6,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { globalApi } from '../services/api';
 import type { GlobalStats } from '../types';
 
-export const useGlobalStats = (enabled = true, autoRefresh = false, interval = 15000) => {
+export const useGlobalStats = (
+  enabled = true,
+  _autoRefresh = false,
+  _interval = 15000,
+) => {
   const [stats, setStats] = useState<GlobalStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -27,13 +31,8 @@ export const useGlobalStats = (enabled = true, autoRefresh = false, interval = 1
 
   useEffect(() => {
     if (!enabled) return;
-    fetchStats();
-
-    if (autoRefresh) {
-      const timer = setInterval(fetchStats, interval);
-      return () => clearInterval(timer);
-    }
-  }, [enabled, fetchStats, autoRefresh, interval]);
+    void fetchStats();
+  }, [enabled, fetchStats]);
 
   return {
     stats,

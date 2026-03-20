@@ -20,9 +20,9 @@ import type {
   SentimentResult,
   GroupChatMessage,
   GlobalSearchHit,
-  RelationOverview,
+  RelationOverviewGrouped,
   RelationProfileDetail,
-  ControversyOverview,
+  ControversyOverviewGrouped,
   ControversyDetail,
   ContactHistoryQuery,
   ContactHistoryRawResponse,
@@ -33,6 +33,9 @@ import type {
   RuntimeChanges,
   RuntimeConfigCheck,
   ChatLabExportResponse,
+  SnsSearchKind,
+  SnsSearchResponse,
+  SnsSearchItem,
 } from '../types';
 
 // 配置 axios 实例
@@ -219,16 +222,28 @@ export const groupsApi = {
 
 export const relationsApi = {
   getOverview: () =>
-    api.get<void, RelationOverview>('/relations/overview'),
+    api.get<void, RelationOverviewGrouped>('/relations/overview'),
 
   getDetail: (username: string) =>
     api.get<void, RelationProfileDetail>('/relations/detail', { params: { username } }),
 
   getControversyOverview: () =>
-    api.get<void, ControversyOverview>('/controversy/overview'),
+    api.get<void, ControversyOverviewGrouped>('/controversy/overview'),
 
   getControversyDetail: (username: string) =>
     api.get<void, ControversyDetail>('/controversy/detail', { params: { username } }),
+};
+
+export const snsApi = {
+  search: (params: {
+    q?: string;
+    username?: string;
+    kind?: SnsSearchKind;
+    from?: string;
+    to?: string;
+    limit?: number;
+  }) =>
+    api.get<void, SnsSearchResponse | SnsSearchItem[]>('/sns/search', { params }),
 };
 
 export const systemApi = {
@@ -259,13 +274,6 @@ export const systemApi = {
 
   reindex: (from: number | null = 0, to: number | null = 0) =>
     api.post<void, { status: string }>('/system/reindex', { from, to }),
-
-  createEventsSource: (): EventSource | null => {
-    if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
-      return null;
-    }
-    return new EventSource('/api/events');
-  },
 };
 
 export const exportApi = {

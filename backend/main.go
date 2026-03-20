@@ -19,6 +19,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -329,6 +330,59 @@ func main() {
 				limit = 200
 			}
 			c.JSON(http.StatusOK, contactSvc.SearchAllMessages(q, includeMine, limit))
+		}))
+
+		// 朋友圈查询（发帖 + 互动 + 索引）
+		api.GET("/sns/search", withAnalysisData(func(c *gin.Context) {
+			limit := 100
+			if value := c.Query("limit"); value != "" {
+				if _, err := fmt.Sscanf(value, "%d", &limit); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be integer"})
+					return
+				}
+			}
+			resp, err := contactSvc.SearchSNS(service.SnsSearchParams{
+				Q:        c.Query("q"),
+				Username: c.Query("username"),
+				Kind:     c.DefaultQuery("kind", "all"),
+				From:     c.Query("from"),
+				To:       c.Query("to"),
+				Limit:    limit,
+			})
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, resp)
+		}))
+
+		api.GET("/media/chat-image", withAnalysisData(func(c *gin.Context) {
+			username := c.Query("username")
+			md5Value := c.Query("md5")
+			size := c.DefaultQuery("size", "full")
+			var ts int64
+			if username == "" || md5Value == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "username and md5 required"})
+				return
+			}
+			if _, err := fmt.Sscanf(c.Query("ts"), "%d", &ts); err != nil || ts <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "ts must be unix timestamp"})
+				return
+			}
+			path, contentType, err := contactSvc.ResolveChatImage(username, ts, md5Value, size)
+			if err != nil {
+				switch {
+				case errors.Is(err, service.ServiceErrImageNotFound):
+					c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				case errors.Is(err, service.ServiceErrImageNeedsAES):
+					c.JSON(http.StatusFailedDependency, gin.H{"error": err.Error()})
+				default:
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				}
+				return
+			}
+			c.Header("Content-Type", contentType)
+			c.File(path)
 		}))
 
 		// 某月的文本消息（情感分析详情）

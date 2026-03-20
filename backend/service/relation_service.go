@@ -43,9 +43,16 @@ type RelationOverview struct {
 	FastReply  []RelationOverviewItem `json:"fast_reply"`
 }
 
+type RelationOverviewGrouped struct {
+	All    RelationOverview `json:"all"`
+	Male   RelationOverview `json:"male"`
+	Female RelationOverview `json:"female"`
+}
+
 type RelationOverviewItem struct {
 	Username         string   `json:"username"`
 	Name             string   `json:"name"`
+	Gender           string   `json:"gender"`
 	Score            float64  `json:"score"`
 	Confidence       float64  `json:"confidence,omitempty"`
 	StaleHint        string   `json:"stale_hint,omitempty"`
@@ -63,9 +70,16 @@ type ControversyOverview struct {
 	ColdViolence []ControversyItem `json:"cold_violence"`
 }
 
+type ControversyOverviewGrouped struct {
+	All    ControversyOverview `json:"all"`
+	Male   ControversyOverview `json:"male"`
+	Female ControversyOverview `json:"female"`
+}
+
 type ControversyItem struct {
 	Username         string             `json:"username"`
 	Name             string             `json:"name"`
+	Gender           string             `json:"gender"`
 	Label            string             `json:"label"`
 	Score            float64            `json:"score"`
 	Confidence       float64            `json:"confidence"`
@@ -158,6 +172,7 @@ type relationMessage struct {
 type relationProfile struct {
 	Username             string
 	Name                 string
+	Gender               model.Gender
 	ContactKind          string
 	IsDeleted            bool
 	IsBiz                bool
@@ -205,9 +220,18 @@ type relationProfile struct {
 	EvidenceGroups       []RelationEvidenceGroup
 }
 
-func (s *ContactService) GetRelationOverview() *RelationOverview {
+func (s *ContactService) GetRelationOverview() *RelationOverviewGrouped {
 	profiles := s.buildAllRelationProfiles()
-	overview := &RelationOverview{}
+	grouped := &RelationOverviewGrouped{
+		All:    buildRelationOverviewFromProfiles(profiles),
+		Male:   buildRelationOverviewFromProfiles(filterProfilesByGender(profiles, model.GenderMale)),
+		Female: buildRelationOverviewFromProfiles(filterProfilesByGender(profiles, model.GenderFemale)),
+	}
+	return grouped
+}
+
+func buildRelationOverviewFromProfiles(profiles []*relationProfile) RelationOverview {
+	overview := RelationOverview{}
 	warming := make([]RelationOverviewItem, 0, len(profiles))
 	cooling := make([]RelationOverviewItem, 0, len(profiles))
 	initiative := make([]RelationOverviewItem, 0, len(profiles))
@@ -218,6 +242,7 @@ func (s *ContactService) GetRelationOverview() *RelationOverview {
 			warming = append(warming, RelationOverviewItem{
 				Username:         profile.Username,
 				Name:             profile.Name,
+				Gender:           string(profile.Gender),
 				Score:            clamp100(profile.TrendScore),
 				Confidence:       confidence,
 				StaleHint:        buildStaleHint(profile.DaysSinceLastContact, false),
@@ -232,6 +257,7 @@ func (s *ContactService) GetRelationOverview() *RelationOverview {
 			cooling = append(cooling, RelationOverviewItem{
 				Username:         profile.Username,
 				Name:             profile.Name,
+				Gender:           string(profile.Gender),
 				Score:            clamp100(profile.CoolingScore),
 				Confidence:       confidence,
 				StaleHint:        buildStaleHint(profile.DaysSinceLastContact, true),
@@ -246,6 +272,7 @@ func (s *ContactService) GetRelationOverview() *RelationOverview {
 			initiative = append(initiative, RelationOverviewItem{
 				Username:         profile.Username,
 				Name:             profile.Name,
+				Gender:           string(profile.Gender),
 				Score:            clamp100(profile.MyInitiationRatio),
 				Confidence:       confidence,
 				StaleHint:        buildStaleHint(profile.DaysSinceLastContact, false),
@@ -260,6 +287,7 @@ func (s *ContactService) GetRelationOverview() *RelationOverview {
 			fastReply = append(fastReply, RelationOverviewItem{
 				Username:         profile.Username,
 				Name:             profile.Name,
+				Gender:           string(profile.Gender),
 				Score:            clamp100(profile.FastReplyScore),
 				Confidence:       confidence,
 				StaleHint:        buildStaleHint(profile.DaysSinceLastContact, false),
@@ -301,9 +329,18 @@ func (s *ContactService) GetRelationDetail(username string) *RelationDetail {
 	}
 }
 
-func (s *ContactService) GetControversyOverview() *ControversyOverview {
+func (s *ContactService) GetControversyOverview() *ControversyOverviewGrouped {
 	profiles := s.buildAllRelationProfiles()
-	overview := &ControversyOverview{}
+	grouped := &ControversyOverviewGrouped{
+		All:    buildControversyOverviewFromProfiles(profiles),
+		Male:   buildControversyOverviewFromProfiles(filterProfilesByGender(profiles, model.GenderMale)),
+		Female: buildControversyOverviewFromProfiles(filterProfilesByGender(profiles, model.GenderFemale)),
+	}
+	return grouped
+}
+
+func buildControversyOverviewFromProfiles(profiles []*relationProfile) ControversyOverview {
+	overview := ControversyOverview{}
 	for _, profile := range profiles {
 		if !shouldIncludeInControversyRanking(profile) {
 			continue
@@ -313,6 +350,7 @@ func (s *ContactService) GetControversyOverview() *ControversyOverview {
 			item := ControversyItem{
 				Username:         profile.Username,
 				Name:             profile.Name,
+				Gender:           string(profile.Gender),
 				Label:            label.Label,
 				Score:            label.Score,
 				Confidence:       label.Confidence,
@@ -393,6 +431,22 @@ func (s *ContactService) buildAllRelationProfiles() []*relationProfile {
 	return profiles
 }
 
+func filterProfilesByGender(profiles []*relationProfile, gender model.Gender) []*relationProfile {
+	if len(profiles) == 0 {
+		return nil
+	}
+	filtered := make([]*relationProfile, 0, len(profiles))
+	for _, profile := range profiles {
+		if profile == nil {
+			continue
+		}
+		if profile.Gender == gender {
+			filtered = append(filtered, profile)
+		}
+	}
+	return filtered
+}
+
 func (s *ContactService) buildRelationProfile(username string) *relationProfile {
 	if isUnsupportedAnalysisUsername(username) {
 		return nil
@@ -403,6 +457,7 @@ func (s *ContactService) buildRelationProfile(username string) *relationProfile 
 		return &relationProfile{
 			Username:          username,
 			Name:              meta.Name,
+			Gender:            meta.Gender,
 			ContactKind:       meta.ContactKind,
 			IsDeleted:         meta.IsDeleted,
 			IsBiz:             meta.IsBiz,
@@ -414,6 +469,7 @@ func (s *ContactService) buildRelationProfile(username string) *relationProfile 
 	profile := &relationProfile{
 		Username:          username,
 		Name:              meta.Name,
+		Gender:            meta.Gender,
 		ContactKind:       meta.ContactKind,
 		IsDeleted:         meta.IsDeleted,
 		IsBiz:             meta.IsBiz,
@@ -528,6 +584,7 @@ func (s *ContactService) buildRelationProfile(username string) *relationProfile 
 
 type relationContactMeta struct {
 	Name              string
+	Gender            model.Gender
 	SharedGroupsCount int
 	ContactKind       string
 	IsDeleted         bool
@@ -548,6 +605,7 @@ func (s *ContactService) lookupContactMeta(username string) relationContactMeta 
 			}
 			return relationContactMeta{
 				Name:              name,
+				Gender:            item.Gender,
 				SharedGroupsCount: item.SharedGroupsCount,
 				ContactKind:       item.ContactKind,
 				IsDeleted:         item.IsDeleted,
@@ -558,11 +616,13 @@ func (s *ContactService) lookupContactMeta(username string) relationContactMeta 
 		}
 	}
 	var contact model.Contact
+	var extraBuffer []byte
 	_ = s.dbMgr.ContactDB.QueryRow(
-		"SELECT COALESCE(remark,''), COALESCE(nick_name,''), COALESCE(alias,''), COALESCE(description,''), COALESCE(delete_flag,0) FROM contact WHERE username = ? LIMIT 1",
+		"SELECT COALESCE(remark,''), COALESCE(nick_name,''), COALESCE(alias,''), COALESCE(description,''), COALESCE(delete_flag,0), COALESCE(extra_buffer, x'') FROM contact WHERE username = ? LIMIT 1",
 		username,
-	).Scan(&contact.Remark, &contact.Nickname, &contact.Alias, &contact.Description, &contact.DeleteFlag)
+	).Scan(&contact.Remark, &contact.Nickname, &contact.Alias, &contact.Description, &contact.DeleteFlag, &extraBuffer)
 	contact.Username = username
+	contact.Gender = parseExplicitGenderFromExtraBuffer(extraBuffer)
 	contact.IsDeleted = contact.DeleteFlag != 0
 	contact.ContactKind, contact.IsBiz, contact.LikelyMarketing, contact.IsLikelyAlt = classifyContactKind(contact)
 	name := strings.TrimSpace(contact.Remark)
@@ -574,6 +634,7 @@ func (s *ContactService) lookupContactMeta(username string) relationContactMeta 
 	}
 	return relationContactMeta{
 		Name:            name,
+		Gender:          contact.Gender,
 		ContactKind:     contact.ContactKind,
 		IsDeleted:       contact.IsDeleted,
 		IsBiz:           contact.IsBiz,

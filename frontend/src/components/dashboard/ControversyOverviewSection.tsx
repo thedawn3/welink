@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 export type ControversyBoardKey = 'simp' | 'ambiguity' | 'faded' | 'tool_person' | 'cold_violence';
+export type ControversyGroupKey = 'all' | 'male' | 'female';
 
 export interface ControversyEvidencePreview {
   date: string;
@@ -38,8 +39,14 @@ export interface ControversyOverview {
   cold_violence: ControversyItem[];
 }
 
+export interface ControversyOverviewGrouped {
+  all: ControversyOverview;
+  male: ControversyOverview;
+  female: ControversyOverview;
+}
+
 interface ControversyOverviewSectionProps {
-  data: ControversyOverview | null;
+  data: ControversyOverviewGrouped | null;
   loading: boolean;
   onItemClick?: (item: ControversyItem, board: ControversyBoardKey) => void;
   maxItems?: number;
@@ -162,16 +169,18 @@ export const ControversyOverviewSection: React.FC<ControversyOverviewSectionProp
   emptyText = '暂无争议榜单数据，先建立索引后再试',
   className = '',
 }) => {
+  const [activeGroup, setActiveGroup] = useState<ControversyGroupKey>('all');
   const [activeBoard, setActiveBoard] = useState<ControversyBoardKey>('simp');
+  const activeGroupData = data?.[activeGroup] ?? data?.all ?? null;
   const boardMeta = BOARD_META.find((board) => board.key === activeBoard) ?? BOARD_META[0];
-  const boardItems = data?.[activeBoard] ?? [];
+  const boardItems = activeGroupData?.[activeBoard] ?? [];
   const hasAnyData = Boolean(
-    data &&
-      (data.simp.length ||
-        data.ambiguity.length ||
-        data.faded.length ||
-        data.tool_person.length ||
-        data.cold_violence.length)
+    activeGroupData &&
+      (activeGroupData.simp.length ||
+        activeGroupData.ambiguity.length ||
+        activeGroupData.faded.length ||
+        activeGroupData.tool_person.length ||
+        activeGroupData.cold_violence.length)
   );
 
   return (
@@ -189,6 +198,26 @@ export const ControversyOverviewSection: React.FC<ControversyOverviewSectionProp
           <AlertTriangle size={12} />
           争议模式
         </span>
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold text-gray-300">榜单分组</span>
+        {([
+          ['all', '全部'],
+          ['male', '男'],
+          ['female', '女'],
+        ] as [ControversyGroupKey, string][]).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setActiveGroup(key)}
+            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+              activeGroup === key ? 'bg-white text-[#1d1d1f]' : 'bg-white/10 text-white/70 hover:bg-white/20'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="mb-4 flex gap-2 flex-wrap">

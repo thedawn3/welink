@@ -1,8 +1,14 @@
 # 数据目录契约与排障
 
+本页负责三件事：
+
+1. 说明 WeLink 认可的标准目录结构
+2. 说明 `msg` / `wechat-decrypt` / 图片 key 的作用
+3. 给出统一排障顺序：`config-check -> runtime -> logs`
+
 ## 1. 标准目录契约
 
-WeLink 消费的标准目录如下：
+WeLink 只消费这种标准结构：
 
 ```text
 <STANDARD_DIR>/
@@ -11,97 +17,127 @@ WeLink 消费的标准目录如下：
 └── sns/sns.db                 # optional
 ```
 
-说明：
+规则：
 
-- `contact/contact.db` 与 `message/message_*.db` 为必需
-- `sns/sns.db` 为可选，但会参与目录校验与状态展示
-- `ylytdeng/wechat-decrypt` 已在当前机器链路实测可产出 `sns/sns.db`
-- 目录可来自任意容器外工具，WeLink 只负责消费标准结构
+- `contact/contact.db`：必需
+- `message/message_*.db`：必需
+- `sns/sns.db`：可选，但会进入状态展示与朋友圈能力检测
+- `xwechat_files` 根目录不是标准目录
 
-## 2. 关键环境变量
+已在当前仓库链路实测：`ylytdeng/wechat-decrypt` 可产出 `sns/sns.db`。
 
-```env
-WELINK_ANALYSIS_DATA_DIR=/absolute/path/to/standard_dir
-WELINK_DATA_DIR=/absolute/path/to/standard_dir
-WELINK_SOURCE_DATA_DIR=
-WELINK_WORK_DIR=./.tmp/welink-workdir
-WELINK_MSG_DIR=/absolute/path/to/msg
-```
+## 2. 目录角色解释
 
-Docker 首期推荐：
+| 目录 | 作用 | 是否必需 |
+|---|---|---|
+| `analysis directory` | WeLink 当前分析使用的稳定目录 | 是 |
+| `source standard directory` | 仅 `manual-sync` 使用；供你后续同步 | `manual-sync` 必需 |
+| `work directory` | 内置 stage 的临时可写目录 | 建议保留 |
+| `msg` 目录 | 媒体索引与聊天图片显示 | 否 |
+| `wechat-decrypt` 目录 | 自动读取图片 key / 配置 | 否 |
+
+## 3. 关键环境变量
 
 ```env
 WELINK_MODE=analysis-only
-WELINK_INGEST_ENABLED=false
-WELINK_DECRYPT_ENABLED=false
-WELINK_DECRYPT_AUTO_START=false
-WELINK_SYNC_ENABLED=false
+WELINK_ANALYSIS_DATA_DIR=/absolute/path/to/analysis_standard_dir
+WELINK_DATA_DIR=/absolute/path/to/analysis_standard_dir
+WELINK_SOURCE_DATA_DIR=
+WELINK_WORK_DIR=./.tmp/welink-workdir
+WELINK_MSG_DIR=
+WELINK_WECHAT_DECRYPT_DIR=
+WELINK_IMAGE_AES_KEY=
+WELINK_IMAGE_AES_KEY_FILE=
+WELINK_WECHAT_DECRYPT_CONFIG=
 ```
 
-含义：
+说明：
 
-- `WELINK_ANALYSIS_DATA_DIR`: analysis directory（核心）
-- `WELINK_SOURCE_DATA_DIR`: source standard directory；`analysis-only` 下留空，`manual-sync` 下指向标准目录
-- `WELINK_WORK_DIR`: work directory（可写）
-- `WELINK_MSG_DIR`: media directory（可选）
+- `WELINK_ANALYSIS_DATA_DIR`：核心目录
+- `WELINK_DATA_DIR`：兼容旧逻辑，建议与 `WELINK_ANALYSIS_DATA_DIR` 相同
+- `WELINK_SOURCE_DATA_DIR`：`analysis-only` 留空；`manual-sync` 指向标准目录
+- `WELINK_MSG_DIR`：不影响文本分析，只影响媒体体验
+- `WELINK_WECHAT_DECRYPT_DIR`：推荐配置，便于自动读取 `image_keys.json` / `config.json`
 
-如果要切换到 `manual-sync`：
+## 4. 图片与 `wechat-decrypt`
+
+如果你希望聊天记录里的图片可预览、可点击查看：
+
+1. 配置 `WELINK_MSG_DIR`
+2. 推荐再配置 `WELINK_WECHAT_DECRYPT_DIR`
+
+WeLink 读取图片密钥的优先级：
+
+1. `image_keys.json`
+2. `config.json.image_aes_key`
+3. `WELINK_IMAGE_AES_KEY`
+
+推荐做法：
 
 ```env
-WELINK_MODE=manual-sync
-WELINK_SOURCE_DATA_DIR=/absolute/path/to/source_standard_dir
-WELINK_INGEST_ENABLED=false
-WELINK_DECRYPT_ENABLED=false
-WELINK_DECRYPT_AUTO_START=false
-WELINK_SYNC_ENABLED=false
+WELINK_MSG_DIR=/absolute/path/to/msg
+WELINK_WECHAT_DECRYPT_DIR=/absolute/path/to/wechat-decrypt
 ```
 
-## 3. 常见错误与修复
+如果工具目录还没有 key，可在宿主机执行：
 
-### `analysis-only + source 为空`
+```bash
+./scripts/extract-image-key.sh --restart
+```
 
-这是正常状态，不是错误。
+### 没有图片 key 会怎样
 
-表现：
+- 文本分析继续可用
+- 旧图片可能仍能显示
+- 一部分 2025-08+ V2 图片会退化成 `[图片]`
 
-- 系统页显示“当前处于只分析模式”
-- 可直接浏览已有 analysis directory
-- 如需同步，改用 `manual-sync`
+## 5. 常见错误与修复
 
-### `source` 指向了原始 `xwechat_files` 根目录
+### `analysis-only` + `source` 留空
 
-症状：启动同步/解密时报 `no contact/message databases found under /app/source-data`。
+这不是错误，是正常状态。
+
+### `source` 指向原始 `xwechat_files` 根目录
+
+症状：
+
+- `缺少 contact/contact.db`
+- `缺少 message/message_*.db`
+- `no contact/message databases found under /app/source-data`
 
 修复：
 
-1. 容器外先整理为标准目录（`contact/message`，可选 `sns`）
-2. 将标准目录配置到 `WELINK_ANALYSIS_DATA_DIR`
-3. Docker 手动同步模式下保持 `WELINK_SOURCE_DATA_DIR=`（空）
+- 先在容器外整理成标准目录
+- 再作为 `analysis` 或 `source` 传给 WeLink
 
-### source 与 analysis 指向同一目录
+### `source` 与 `analysis` 同目录
 
-症状：运行时校验失败、同步链路异常或目录污染。
+症状：
+
+- `config-check` 返回阻塞错误
+- 后端拒绝启动同步
 
 修复：
 
-- 分离 source / analysis
-- 或直接采用 Docker 手动同步模式（source 为空，占位挂载）
+- `manual-sync` 必须拆成两个目录
+- 如果没有独立 source，就用 `analysis-only`
 
-### 媒体目录不存在
+### 没有 `msg` 目录
 
-不会阻塞联系人/关系/关键词分析，只影响图片/视频等媒体回溯。
+不会影响联系人、关系分析、搜索、文本时间线，只影响媒体展示。
 
-## 4. 推荐排障顺序
+### 有 `msg` 目录但图片打不开
 
-固定顺序：
+按这个顺序查：
 
-1. `GET /api/system/config-check`
-2. `GET /api/system/runtime`
-3. `GET /api/system/logs`
-4. 必要时 `POST /api/system/decrypt/start`
-5. 必要时 `POST /api/system/reindex`
+1. `msg` 路径是否正确
+2. 工具目录是否正确
+3. 工具目录里是否已经生成 `image_keys.json`
+4. 系统页“图片预览 / 密钥诊断”是否显示 ready
 
-示例：
+## 6. 推荐排障顺序
+
+无论 macOS 还是 Windows，都按这 4 步查：
 
 ```bash
 curl http://localhost:8080/api/system/config-check
@@ -110,23 +146,30 @@ curl http://localhost:8080/api/system/logs
 curl -X POST http://localhost:8080/api/system/reindex
 ```
 
-重点字段：
+重点看：
 
-- `deployment_target`
 - `mode`
+- `primary_issue`
+- `blocking_reasons`
 - `last_error`
 - `last_message_at`
 - `last_sns_at`
-- `pending_changes`
+- `is_initialized`
 
-## 5. 自动刷新与 Docker 的边界
+## 7. 平台路径示例
 
-当前 Docker 正式路径是手动同步标准目录，不依赖容器内 watcher 自动刷新。
+### macOS
 
-建议流程：
+```text
+/Users/you/work/wechat-decrypt/decrypted_with_wal
+/Users/you/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/<wxid>/msg
+```
 
-1. 容器外脚本更新标准目录（`contact/message/sns`）
-2. WeLink 执行校验
-3. 手动同步/重建索引并观察 runtime
+### Windows
 
-如果你需要完整自动刷新 watcher，优先在本地原生模式使用。
+```text
+C:/Users/you/work/wechat-decrypt/decrypted_with_wal
+C:/Users/you/Documents/WeChat Files/<wxid>/msg
+```
+
+Windows 建议统一写成 `C:/...`。

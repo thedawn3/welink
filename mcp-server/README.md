@@ -10,12 +10,15 @@
 2. 再按平台文档完成解密，拿到标准数据库目录（`contact/message`，可选 `sns`）
 3. 运行 `welink-doctor` 校验目录并生成 `.env`
 4. 启动 WeLink，先检查 `GET /api/system/config-check`，再确认 `GET /api/system/runtime` 中 `is_initialized=true`
-5. 最后再连接 MCP 客户端
+5. 本次双平台验收优先走 Docker 的 `analysis-only` / `manual-sync` 两种正式模式
+6. 最后再连接 MCP 客户端
 
 兼容模式下也可检查 `GET /api/status`（同样返回统一运行时状态）。
 
-平台文档：
+部署文档：
 
+- [../README.md](../README.md)
+- [../docs/deploy-docker.md](../docs/deploy-docker.md)
 - [../docs/setup-macos.md](../docs/setup-macos.md)
 - [../docs/setup-windows.md](../docs/setup-windows.md)
 
@@ -91,15 +94,15 @@ claude mcp add welink /你的路径/welink/mcp-server/welink-mcp -e WELINK_URL=h
 
 说明：
 
-- 当前 MCP 直接对齐 WeLink 新 `system/export` 契约：运行时状态与控制走 `/api/system/*`，ChatLab 导出走 `/api/export/chatlab/*`。`/api/events` 是前端实时刷新通道；MCP 不直接消费 SSE，但与前端共享同一份 runtime 状态、`data_revision` 与 `pending_changes` 语义。
-- Docker 推荐模式是手动同步标准目录。MCP 可继续使用 `start_decrypt/rebuild_index`，但建议先通过 `GET /api/system/config-check` 确认 source/analysis/work 目录状态。
-- `get_recent_changes` / `rebuild_index` 应结合 `data_revision`、`pending_changes`、`last_reindex_at` 一起判断：若 revision 已增长但未完成重建，优先等待；若状态长时间卡住，再执行手动恢复。
+- 当前 MCP 直接对齐 WeLink 的统一 `system/export` 契约：运行时状态与控制走 `/api/system/*`，ChatLab 导出走 `/api/export/chatlab/*`。
+- 本次双平台部署建议优先使用 Docker 的 `analysis-only` / `manual-sync` 两种正式模式；MCP 也基于这两种模式工作。
+- `start_decrypt` 调用前，建议先通过 `GET /api/system/config-check` 确认目录和模式已就绪。
+- `get_recent_changes` / `rebuild_index` 建议结合 `data_revision`、`pending_changes`、`last_reindex_at` 一起判断。
 
 补充说明：
 
-- `start_decrypt` 对应 `POST /api/system/decrypt/start`。当传入 `auto_refresh=true` 时，后端会先尝试启动同步监听（sync manager）以支持后续自动刷新。
-- 当目录或模式校验失败时，`start_decrypt` 会返回 `400` 和可执行错误信息（例如 source 非标准目录、source/analysis 同目录、work_dir 不可写）。
-- `stop_decrypt` 对应 `POST /api/system/decrypt/stop`。当前仅允许停止 `running` / `stopping` 状态的解密任务；若任务已完成或不存在，会返回错误。
+- `start_decrypt` 对应 `POST /api/system/decrypt/start`；当目录或模式校验失败时，会返回 `400` 与可执行错误信息。
+- `stop_decrypt` 对应 `POST /api/system/decrypt/stop`；若当前没有进行中的解密任务，会返回 `200` no-op，而不是报错。
 - `GET /api/system/logs?task_id=...` 返回的是该解密任务的 orchestrator 日志，不混入统一运行时日志。
 - `task_id` 日志按产生顺序返回（最早 -> 最晚），`limit` 表示最早的前 N 条，而不是最近 N 条。
 
@@ -111,11 +114,6 @@ curl http://localhost:8080/api/system/runtime
 curl http://localhost:8080/api/system/changes
 ```
 
-如果你启用了自动刷新，也可以检查 SSE：
-
-```bash
-curl -N http://localhost:8080/api/events
-```
 
 ## 手动恢复建议
 
@@ -123,7 +121,7 @@ curl -N http://localhost:8080/api/events
 
 - `decrypt_state=error`：先看 `get_runtime_status` 中的 `last_error`，再调用 `start_decrypt`
 - `pending_changes` 长时间不回落：先 `get_recent_changes`，必要时 `rebuild_index`
-- 平台解密任务卡住：先 `get_runtime_status` / `GET /api/system/tasks` 确认任务仍处于 `running` 或 `stopping`，再调用 `stop_decrypt`；已完成任务不应再执行 stop
+- 平台解密任务卡住：先 `get_runtime_status` / `GET /api/system/tasks` 确认状态，再调用 `stop_decrypt`；即使当前没有进行中的任务，也会返回安全 no-op
 
 恢复成功后，重点观察：
 
@@ -136,7 +134,6 @@ curl -N http://localhost:8080/api/events
 - AI 可以直接查询联系人、消息统计、关系分析和关键词结果
 - AI 可以基于 WeLink 已完成的本地索引做总结、筛选和对比
 - AI 可以通过 MCP 触发解密任务、重建索引并查看运行时变化
-- 当 `start_decrypt` 使用 `auto_refresh=true` 且同步监听已配置时，后续数据库变化会继续进入统一自动刷新链路；若监听未配置，解密任务仍可成功，但不会自动暴露 `sync` 状态
 - AI 可以直接导出 ChatLab 标准数据用于后续分析链路
 - 如果索引尚未完成，AI 看到的数据也会为空或不完整
 
@@ -176,9 +173,10 @@ Claude Code 中执行：
 - 先回到平台文档，确认电脑微信里确实已有完整聊天记录
 - 再重新解密并运行 `welink-doctor`
 
-**start_decrypt 成功了，但没有自动刷新**
-- 先看 `get_recent_changes` 对应的 `/api/system/changes` 是否存在 `sync` 字段
-- 若没有，说明同步监听未配置或未成功启动；再看 `GET /api/system/logs` 中是否有 `warn/sync`
+**start_decrypt 后没有看到数据变化**
+- 先回到 `GET /api/system/config-check`，确认当前模式是否真的支持这次操作
+- Docker 正式模式推荐 `analysis-only` / `manual-sync`，通常以手动同步与重建索引为准
+- 若你走的是本地高级链路，再看 `GET /api/system/logs` 与 `GET /api/system/changes`
 
 **system 工具报接口不存在**
 - 说明后端尚未上线 `/api/system/*` 或 `/api/export/chatlab/*` 的统一契约

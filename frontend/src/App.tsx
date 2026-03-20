@@ -3,8 +3,8 @@
  * 重构版本 - 组件化 + 微信风格设计
  */
 
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Users, MessageSquare, Flame, Snowflake, Search } from 'lucide-react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { Users, MessageSquare, Flame, Snowflake } from 'lucide-react';
 
 // Layout Components
 import { Sidebar } from './components/layout/Sidebar';
@@ -15,7 +15,6 @@ import { KPICard } from './components/dashboard/KPICard';
 import { RelationshipHeatmap } from './components/dashboard/RelationshipHeatmap';
 import { MonthlyTrendChart } from './components/dashboard/MonthlyTrendChart';
 import { HourlyHeatmap } from './components/dashboard/HourlyHeatmap';
-import { ContactTable } from './components/dashboard/ContactTable';
 import { DatabaseView } from './components/dashboard/DatabaseView';
 import { GlobalSearchPanel, type GlobalSearchFilterType } from './components/dashboard/GlobalSearchPanel';
 import { LateNightRanking } from './components/dashboard/LateNightRanking';
@@ -23,6 +22,14 @@ import { RelationOverviewSection, type RelationOverviewListType } from './compon
 import { ControversyOverviewSection, type ControversyBoardKey } from './components/dashboard/ControversyOverviewSection';
 import { GroupsView, GroupDetailModal } from './components/groups/GroupsView';
 import { useDarkMode } from './hooks/useDarkMode';
+import {
+  ContactsPage,
+  type ContactActivityFilter,
+  type ContactCategoryFilter,
+  type ContactGenderFilter,
+  type ContactSortKey,
+} from './components/contacts/ContactsPage';
+import { SnsSearchPage } from './components/sns/SnsSearchPage';
 
 // Contact Components
 import { ContactModal } from './components/contact/ContactModal';
@@ -51,8 +58,8 @@ import type {
   TimeRange,
   GroupInfo,
   GlobalSearchHit,
-  RelationOverview,
-  ControversyOverview,
+  RelationOverviewGrouped,
+  ControversyOverviewGrouped,
   ChatLabExportResponse,
 } from './types';
 
@@ -61,12 +68,14 @@ import { formatCompactNumber } from './utils/formatters';
 import { contactsApi, exportApi, globalApi, groupsApi, relationsApi, systemApi } from './services/api';
 
 const ALL_TIME: TimeRange = { from: null, to: null, label: '全部' };
-
-type ContactActivityFilter = 'all' | 'hot' | 'warm' | 'cold';
-type ContactCategoryFilter = 'all' | 'normal' | 'deleted';
-type ContactSortKey = 'messages_desc' | 'last_message_desc' | 'shared_groups_desc' | 'name_asc';
 type DashboardRelationMode = 'objective' | 'controversy';
 type ContactModalView = 'timeline' | 'wordcloud' | 'detail' | 'sentiment' | 'search' | 'analysis';
+
+const EMPTY_RELATION_GROUPED: RelationOverviewGrouped = {
+  all: { warming: [], cooling: [], initiative: [], fast_reply: [] },
+  male: { warming: [], cooling: [], initiative: [], fast_reply: [] },
+  female: { warming: [], cooling: [], initiative: [], fast_reply: [] },
+};
 
 function getContactLastMessageTs(contact: ContactStats) {
   const ts = new Date(contact.last_message_time).getTime();
@@ -92,6 +101,7 @@ function App() {
   const [contactSearch, setContactSearch] = useState('');
   const [contactActivityFilter, setContactActivityFilter] = useState<ContactActivityFilter>('all');
   const [contactCategoryFilter, setContactCategoryFilter] = useState<ContactCategoryFilter>('all');
+  const [contactGenderFilter, setContactGenderFilter] = useState<ContactGenderFilter>('all');
   const [contactSort, setContactSort] = useState<ContactSortKey>('messages_desc');
   const [dashboardRelationMode, setDashboardRelationMode] = useState<DashboardRelationMode>('objective');
   const [globalQuery, setGlobalQuery] = useState('');
@@ -124,7 +134,6 @@ function App() {
     changes: runtimeChanges,
     tasks: runtimeTasks,
     logs: runtimeLogs,
-    latestEvent,
     eventsConnected,
     loading: runtimeLoading,
     error: runtimeError,
@@ -153,9 +162,9 @@ function App() {
     refresh: refreshGlobalStats,
   } = useGlobalStats(isInitialized, false, 15000);
   const [allGroups, setAllGroups] = useState<GroupInfo[]>([]);
-  const [relationOverview, setRelationOverview] = useState<RelationOverview | null>(null);
+  const [relationOverview, setRelationOverview] = useState<RelationOverviewGrouped | null>(null);
   const [relationOverviewLoading, setRelationOverviewLoading] = useState(false);
-  const [controversyOverview, setControversyOverview] = useState<ControversyOverview | null>(null);
+  const [controversyOverview, setControversyOverview] = useState<ControversyOverviewGrouped | null>(null);
   const [controversyOverviewLoading, setControversyOverviewLoading] = useState(false);
   const loadGroups = useCallback(async () => {
     if (!isInitialized) return;
@@ -205,7 +214,6 @@ function App() {
     void loadRelationData();
   }, [refreshContacts, refreshGlobalStats, loadGroups, loadRelationData]);
 
-  const lastRefreshEventId = useRef<string | null>(null);
   const statsLoading = contactsLoading;
 
   useEffect(() => {
@@ -273,26 +281,36 @@ function App() {
 
   const visibleRelationOverview = useMemo(() => {
     if (!relationOverview || blockedUsernames.size === 0) return relationOverview;
-    const filterItems = (items: RelationOverview['warming']) =>
+    const filterItems = (items: RelationOverviewGrouped['all']['warming']) =>
       items.filter((item) => !blockedUsernames.has(item.username));
+    const filterGroup = (group: RelationOverviewGrouped['all']) => ({
+      warming: filterItems(group.warming),
+      cooling: filterItems(group.cooling),
+      initiative: filterItems(group.initiative),
+      fast_reply: filterItems(group.fast_reply),
+    });
     return {
-      warming: filterItems(relationOverview.warming),
-      cooling: filterItems(relationOverview.cooling),
-      initiative: filterItems(relationOverview.initiative),
-      fast_reply: filterItems(relationOverview.fast_reply),
+      all: filterGroup(relationOverview.all),
+      male: filterGroup(relationOverview.male),
+      female: filterGroup(relationOverview.female),
     };
   }, [relationOverview, blockedUsernames]);
 
   const visibleControversyOverview = useMemo(() => {
     if (!controversyOverview || blockedUsernames.size === 0) return controversyOverview;
-    const filterItems = (items: ControversyOverview['simp']) =>
+    const filterItems = (items: ControversyOverviewGrouped['all']['simp']) =>
       items.filter((item) => !blockedUsernames.has(item.username));
+    const filterGroup = (group: ControversyOverviewGrouped['all']) => ({
+      simp: filterItems(group.simp),
+      ambiguity: filterItems(group.ambiguity),
+      faded: filterItems(group.faded),
+      tool_person: filterItems(group.tool_person),
+      cold_violence: filterItems(group.cold_violence),
+    });
     return {
-      simp: filterItems(controversyOverview.simp),
-      ambiguity: filterItems(controversyOverview.ambiguity),
-      faded: filterItems(controversyOverview.faded),
-      tool_person: filterItems(controversyOverview.tool_person),
-      cold_violence: filterItems(controversyOverview.cold_violence),
+      all: filterGroup(controversyOverview.all),
+      male: filterGroup(controversyOverview.male),
+      female: filterGroup(controversyOverview.female),
     };
   }, [controversyOverview, blockedUsernames]);
 
@@ -311,6 +329,9 @@ function App() {
         ) {
           return false;
         }
+      }
+      if (contactGenderFilter !== 'all' && (contact.gender ?? 'unknown') !== contactGenderFilter) {
+        return false;
       }
       if (!searchLower) {
         return true;
@@ -336,7 +357,7 @@ function App() {
       return getContactLastMessageTs(right) - getContactLastMessageTs(left);
     });
     return next;
-  }, [contactActivityFilter, contactCategoryFilter, contactSearch, contactSort, contacts]);
+  }, [contactActivityFilter, contactCategoryFilter, contactGenderFilter, contactSearch, contactSort, contacts]);
 
   const visibleGlobalResults = useMemo(() => {
     return globalResults.filter((item) => {
@@ -408,22 +429,6 @@ function App() {
       setGlobalSearchLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    if (!latestEvent) return;
-    const relevant =
-      latestEvent.revision != null ||
-      latestEvent.type?.startsWith('runtime.revision') ||
-      latestEvent.type?.startsWith('runtime.reindex') ||
-      latestEvent.type === 'runtime.decrypt.finished';
-    if (!relevant) return;
-    if (latestEvent.id && lastRefreshEventId.current === latestEvent.id) return;
-    lastRefreshEventId.current = latestEvent.id ?? lastRefreshEventId.current;
-    refreshDerivedData();
-    if (globalSearchTouched && globalQuery.trim()) {
-      void runGlobalSearch(globalQuery, globalIncludeMine);
-    }
-  }, [globalIncludeMine, globalQuery, globalSearchTouched, latestEvent, refreshDerivedData, runGlobalSearch]);
 
   const handleOpenSearchContact = useCallback((username: string) => {
     const contact = allContacts.find((item) => item.username === username);
@@ -597,13 +602,6 @@ function App() {
     }
   }, [downloadChatLabPayload, formatExportNotice]);
 
-  // 后端重启后自动重新触发索引（localStorage 有记录但后端尚未索引）
-  useEffect(() => {
-    if (backendReady && hasStarted && !isInitialized && !isIndexing && !initLoading) {
-      globalApi.init(timeRange.from, timeRange.to).then(() => startPolling()).catch(console.error);
-    }
-  }, [backendReady]);
-
   useEffect(() => {
     if (!systemActionNotice) return;
     const timer = window.setTimeout(() => setSystemActionNotice(null), 5000);
@@ -612,7 +610,7 @@ function App() {
 
   // 后端未连通时等待
   if (!backendReady) {
-    return <InitializingScreen message="正在连接后端服务..." />;
+    return <InitializingScreen message="正在连接后端服务..." onRefresh={() => { void startPolling(); }} />;
   }
 
   // 用户还没选时间范围，或主动点了「重新选择」
@@ -622,7 +620,13 @@ function App() {
 
   // 已选择时间范围，等待索引完成
   if (!isInitialized || isIndexing) {
-    return <InitializingScreen message={`正在建立索引（${timeRange.label}）...`} />;
+    return (
+      <InitializingScreen
+        message={`正在建立索引（${timeRange.label}）...`}
+        onRefresh={() => { void startPolling(); }}
+        onReset={handleReselect}
+      />
+    );
   }
 
   return (
@@ -636,8 +640,8 @@ function App() {
           <div>
             {/* Header */}
             <Header
-              title="WeLink"
-              subtitle="微信聊天数据分析平台"
+              title="首页"
+              subtitle="微信聊天数据分析总览"
             />
 
             {/* 当前时间范围标签 */}
@@ -738,7 +742,7 @@ function App() {
               </div>
               {dashboardRelationMode === 'objective' ? (
                 <RelationOverviewSection
-                  data={visibleRelationOverview ?? { warming: [], cooling: [], initiative: [], fast_reply: [] }}
+                  data={visibleRelationOverview ?? EMPTY_RELATION_GROUPED}
                   loading={relationOverviewLoading}
                   onItemClick={(_listType: RelationOverviewListType, item) => {
                     handleOpenRelationContact(item.username, 'analysis');
@@ -776,76 +780,43 @@ function App() {
                 emptyText={globalSearchTouched ? '未找到相关消息' : '输入关键词后搜索全部聊天记录'}
               />
             </div>
-
-            {/* Contact Table */}
-            <div className="mb-8">
-              <div className="flex flex-col gap-4 mb-6">
-                <div className="flex items-center justify-between gap-4">
-                  <h2 className="dk-text text-2xl font-black text-[#1d1d1f]">
-                    联系人列表
-                    <span className="text-gray-400 text-lg ml-3 font-semibold">
-                      {filteredContacts.length} 位
-                    </span>
-                  </h2>
-                </div>
-                <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                    <input
-                      type="text"
-                      placeholder="搜索联系人..."
-                      value={contactSearch}
-                      onChange={(e) => setContactSearch(e.target.value)}
-                      className="pl-9 pr-4 py-2.5 w-full bg-white border border-gray-200 rounded-xl text-sm font-medium placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#07c160]/20 focus:border-[#07c160] transition-all duration-200"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:flex gap-3 lg:w-auto">
-                    <select
-                      value={contactActivityFilter}
-                      onChange={(e) => setContactActivityFilter(e.target.value as ContactActivityFilter)}
-                      className="px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#07c160]/20 focus:border-[#07c160]"
-                    >
-                      <option value="all">全部状态</option>
-                      <option value="hot">活跃</option>
-                      <option value="warm">温热</option>
-                      <option value="cold">零消息</option>
-                    </select>
-                    <select
-                      value={contactCategoryFilter}
-                      onChange={(e) => setContactCategoryFilter(e.target.value as ContactCategoryFilter)}
-                      className="px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#07c160]/20 focus:border-[#07c160]"
-                    >
-                      <option value="all">全部联系人</option>
-                      <option value="normal">普通联系人</option>
-                      <option value="deleted">已删好友</option>
-                    </select>
-                    <select
-                      value={contactSort}
-                      onChange={(e) => setContactSort(e.target.value as ContactSortKey)}
-                      className="px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#07c160]/20 focus:border-[#07c160]"
-                    >
-                      <option value="messages_desc">按消息数</option>
-                      <option value="last_message_desc">按最近联系</option>
-                      <option value="shared_groups_desc">按共同群聊</option>
-                      <option value="name_asc">按名称</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-              {statsLoading && contacts.length === 0 ? (
-                <div className="bg-white rounded-3xl border border-gray-100 p-20 text-center">
-                  <div className="text-gray-300 font-bold text-lg animate-pulse">
-                    加载中...
-                  </div>
-                </div>
-              ) : (
-                <ContactTable
-                  contacts={filteredContacts}
-                  onContactClick={handleContactClick}
-                />
-              )}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  refreshDerivedData();
+                  if (globalSearchTouched && globalQuery.trim()) {
+                    void runGlobalSearch(globalQuery, globalIncludeMine);
+                  }
+                }}
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:border-[#07c16060] hover:text-[#07c160]"
+              >
+                手动刷新首页数据
+              </button>
             </div>
           </div>
+        ) : activeTab === 'contacts' ? (
+          <ContactsPage
+            contacts={filteredContacts}
+            loading={statsLoading}
+            total={filteredContacts.length}
+            search={contactSearch}
+            activityFilter={contactActivityFilter}
+            categoryFilter={contactCategoryFilter}
+            genderFilter={contactGenderFilter}
+            sortKey={contactSort}
+            onSearchChange={setContactSearch}
+            onActivityFilterChange={setContactActivityFilter}
+            onCategoryFilterChange={setContactCategoryFilter}
+            onGenderFilterChange={setContactGenderFilter}
+            onSortChange={setContactSort}
+            onRefresh={() => {
+              refreshContacts();
+            }}
+            onContactClick={handleContactClick}
+          />
+        ) : activeTab === 'sns' ? (
+          <SnsSearchPage contacts={contacts} />
         ) : activeTab === 'groups' ? (
           <GroupsView allContacts={allContacts} onContactClick={handleContactClick} blockedGroups={blockedGroups} onBlockGroup={addBlockedGroup} />
         ) : activeTab === 'privacy' ? (
@@ -867,7 +838,7 @@ function App() {
             changes={runtimeChanges}
             tasks={runtimeTasks}
             logs={runtimeLogs}
-            latestEvent={latestEvent}
+            latestEvent={null}
             eventsConnected={eventsConnected}
             loading={runtimeLoading}
             error={runtimeError}
@@ -899,7 +870,6 @@ function App() {
         onClose={handleCloseModal}
         initialTab={selectedContactView}
         initialControversyLabel={selectedControversyLabel}
-        refreshKey={mergedRuntimeStatus.data_revision}
         onGroupClick={(g) => { setSelectedContact(null); setSelectedGroup(g); }}
         onBlock={(username) => { addBlockedUser(username); }}
       />

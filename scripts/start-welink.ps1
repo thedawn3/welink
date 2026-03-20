@@ -5,7 +5,8 @@ param(
   [string]$DataDir = $(if ($env:WELINK_ANALYSIS_DATA_DIR) { $env:WELINK_ANALYSIS_DATA_DIR } else { $env:WELINK_DATA_DIR }),
   [string]$SourceDataDir = $env:WELINK_SOURCE_DATA_DIR,
   [string]$WorkDir = $env:WELINK_WORK_DIR,
-  [string]$MsgDir = $env:WELINK_MSG_DIR
+  [string]$MsgDir = $env:WELINK_MSG_DIR,
+  [string]$WechatDecryptDir = $env:WELINK_WECHAT_DECRYPT_DIR
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,7 +41,7 @@ try {
   throw "'docker compose' is unavailable. Enable Docker Compose v2 in Docker Desktop."
 }
 
-& $DoctorScript -Mode $Mode -Platform $Platform -DataDir $DataDir -SourceDataDir $SourceDataDir -WorkDir $WorkDir -MsgDir $MsgDir -WriteEnv
+& $DoctorScript -Mode $Mode -Platform $Platform -DataDir $DataDir -SourceDataDir $SourceDataDir -WorkDir $WorkDir -MsgDir $MsgDir -WechatDecryptDir $WechatDecryptDir -WriteEnv
 
 Push-Location $RepoRoot
 try {
@@ -49,11 +50,15 @@ try {
   $ResolvedPlatform = Get-EnvValueFromFile -Key "WELINK_PLATFORM" -Fallback $Platform
   $ResolvedSourceDataDir = Get-EnvValueFromFile -Key "WELINK_SOURCE_DATA_DIR" -Fallback $SourceDataDir
   $ResolvedWorkDir = Get-EnvValueFromFile -Key "WELINK_WORK_DIR" -Fallback $WorkDir
+  $ResolvedWechatDecryptDir = Get-EnvValueFromFile -Key "WELINK_WECHAT_DECRYPT_DIR" -Fallback $WechatDecryptDir
   $FrontendPort = Get-EnvValueFromFile -Key "WELINK_FRONTEND_PORT" -Fallback "3000"
   $BackendPort = Get-EnvValueFromFile -Key "WELINK_BACKEND_PORT" -Fallback "8080"
   Write-Host "WeLink started."
   Write-Host "Local frontend: http://localhost:$FrontendPort"
   Write-Host "Local backend : http://localhost:$BackendPort"
+  if ($ResolvedWechatDecryptDir) {
+    Write-Host "wechat-decrypt: $ResolvedWechatDecryptDir"
+  }
 
   if ($ResolvedMode -eq "decrypt-first") {
     Write-Host ""

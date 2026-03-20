@@ -1,215 +1,218 @@
-# Docker 部署与手动同步（主文档）
+# Docker 部署与一键启动
 
-本页是 Docker 场景的唯一主入口，适用于 `thedawn3/welink`。
+本页是 `thedawn3/welink` 的 Docker 主文档。
+
+## 1. 先记结论
 
 当前 Docker 只保留两种正式模式：
 
-- `analysis-only`：只消费 analysis directory，不提供 source standard directory
-- `manual-sync`：提供 source standard directory，系统页执行“校验并同步标准目录”
+- `analysis-only`：只消费 `analysis directory`
+- `manual-sync`：消费 `analysis directory + source standard directory`
 
-共同原则：
+共同规则：
 
-- 容器外工具负责准备标准目录（聊天/朋友圈）
-- WeLink 容器内只做校验、手动同步、索引与分析
-- 默认不启用容器内 watcher，不自动启动解密
-- `ylytdeng/wechat-decrypt` 已在本机链路实测可产出 `sns/sns.db`
+- 容器外工具负责准备标准目录
+- WeLink 容器内只做校验、手动同步、索引、分析与展示
+- Docker 首期不把容器内 watcher / auto refresh 作为正式主路径
+- `msg` 与 `wechat-decrypt` 是可选增强项，不是启动硬前置
 
-## 1. 目录契约与挂载模型
+## 2. 启动前提
 
-### 标准目录契约（source / analysis 都遵循）
+在任一平台执行脚本前，请先确认：
+
+- Git 已安装
+- Docker Desktop 已安装，且 `docker compose version` 可用
+- Python 3 已安装
+- 已准备标准目录：
 
 ```text
 <STANDARD_DIR>/
 ├── contact/contact.db
 ├── message/message_*.db
-└── sns/sns.db                 # 可选
+└── sns/sns.db                 # optional
 ```
 
-### Docker 挂载语义
+目录语义：
 
-- `WELINK_SOURCE_DATA_DIR` -> `/app/source-data`（source standard directory，只读）
-- `WELINK_ANALYSIS_DATA_DIR` -> `/app/analysis-data`（analysis directory，可写）
-- `WELINK_WORK_DIR` -> `/app/workdir`（work directory，可写）
-- `WELINK_MSG_DIR` -> `/app/msg`（media directory，只读，可空）
+- `analysis directory`：WeLink 当前分析所使用的稳定目录
+- `source standard directory`：仅 `manual-sync` 需要；供你后续手动同步
+- `work directory`：内置 stage 临时工作目录，可写
+- `media directory`：微信 `msg` 目录，可选
+- `wechat-decrypt directory`：工具目录，可选
 
-默认行为：
-
-- `WELINK_SOURCE_DATA_DIR` 为空时，compose 自动挂载 `./.tmp/welink-empty-source`
-- 不会再默认回退到 `./decrypted`，避免 source / analysis 混用
-
-## 2. canonical 模式 A：analysis-only（默认）
+## 3. 推荐：直接用启动脚本
 
 ### macOS / Linux
 
-```bash
-./scripts/welink-doctor.sh \
-  --mode analysis-only \
-  --data-dir /absolute/path/to/standard_dir \
-  --msg-dir /absolute/path/to/msg \
-  --write-env
-
-docker compose up -d --build
-```
-
-### Windows PowerShell
-
-```powershell
-.\scripts\welink-doctor.ps1 `
-  -Mode analysis-only `
-  -DataDir 'C:/absolute/path/to/standard_dir' `
-  -MsgDir 'C:/absolute/path/to/msg' `
-  -WriteEnv
-
-docker compose up -d --build
-```
-
-doctor 在 `analysis-only` 下会生成安全默认：
-
-- `WELINK_INGEST_ENABLED=false`
-- `WELINK_DECRYPT_ENABLED=false`
-- `WELINK_DECRYPT_AUTO_START=false`
-- `WELINK_SYNC_ENABLED=false`
-- `WELINK_SOURCE_DATA_DIR=`（留空，走空占位挂载）
-
-适用场景：
-
-- 你已经有可分析的标准目录，只需要浏览 / 搜索 / 关系分析
-- 你不希望在容器内保留任何 source 同步动作
-
-## 3. canonical 模式 B：manual-sync
-
-### macOS / Linux
+`manual-sync`：
 
 ```bash
-./scripts/welink-doctor.sh \
+./scripts/start-welink.sh \
   --mode manual-sync \
   --data-dir /absolute/path/to/analysis_standard_dir \
-  --source-data-dir /absolute/path/to/source_standard_dir \
-  --msg-dir /absolute/path/to/msg \
-  --write-env
+  --source-data-dir /absolute/path/to/source_standard_dir
+```
 
-docker compose up -d --build
+`analysis-only`：
+
+```bash
+./scripts/start-welink.sh \
+  --mode analysis-only \
+  --data-dir /absolute/path/to/analysis_standard_dir
 ```
 
 ### Windows PowerShell
 
+先执行：
+
 ```powershell
-.\scripts\welink-doctor.ps1 `
+Set-ExecutionPolicy -Scope Process Bypass -Force
+```
+
+然后：
+
+```powershell
+.\scripts\start-welink.ps1 `
   -Mode manual-sync `
   -DataDir 'C:/absolute/path/to/analysis_standard_dir' `
-  -SourceDataDir 'C:/absolute/path/to/source_standard_dir' `
-  -MsgDir 'C:/absolute/path/to/msg' `
-  -WriteEnv
-
-docker compose up -d --build
+  -SourceDataDir 'C:/absolute/path/to/source_standard_dir'
 ```
 
-适用场景：
+或：
 
-- 容器外工具会持续更新 source standard directory
-- 你希望保留“先校验，再手动同步/重建”的收敛路径
-
-## 4. `.env` 模板
-
-```env
-WELINK_BACKEND_PORT=8080
-WELINK_FRONTEND_PORT=3000
-WELINK_GIN_MODE=release
-
-# analysis-only
-WELINK_ANALYSIS_DATA_DIR=/absolute/path/to/standard_dir
-WELINK_DATA_DIR=/absolute/path/to/standard_dir
-WELINK_SOURCE_DATA_DIR=
-WELINK_WORK_DIR=./.tmp/welink-workdir
-WELINK_MSG_DIR=/absolute/path/to/msg
-WELINK_MODE=analysis-only
-WELINK_INGEST_ENABLED=false
-WELINK_DECRYPT_ENABLED=false
-WELINK_DECRYPT_AUTO_START=false
-WELINK_SYNC_ENABLED=false
-
-# manual-sync（切换时至少改这两项）
-# WELINK_MODE=manual-sync
-# WELINK_SOURCE_DATA_DIR=/absolute/path/to/source_standard_dir
+```powershell
+.\scripts\start-welink.ps1 `
+  -Mode analysis-only `
+  -DataDir 'C:/absolute/path/to/analysis_standard_dir'
 ```
 
-## 5. 配置/状态检查顺序
+### 可选增强参数
 
-启动后建议固定按这个顺序排障：
+如有需要，可在两端都追加：
 
-1. `GET /api/system/config-check`（目录与配置是否可操作）
-2. `GET /api/system/runtime`（当前状态、最近消息时间、SNS 时间、错误）
-3. `GET /api/system/logs`（任务日志与详细报错）
-4. 必要时 `POST /api/system/decrypt/start`（先过 config-check）
-5. 如需强制重建：`POST /api/system/reindex`
+- `msg` 目录
+- `wechat-decrypt` 目录
 
 示例：
 
 ```bash
+--msg-dir /absolute/path/to/msg --wechat-decrypt-dir /absolute/path/to/wechat-decrypt
+```
+
+```powershell
+-MsgDir 'C:/absolute/path/to/msg' -WechatDecryptDir 'C:/absolute/path/to/wechat-decrypt'
+```
+
+## 4. 两种正式模式怎么选
+
+| 模式 | 何时使用 | 必填参数 | 典型用途 |
+|---|---|---|---|
+| `analysis-only` | 你已经有一个可分析的标准目录 | `data-dir` | 只浏览、搜索、分析现有数据 |
+| `manual-sync` | 你既有当前分析目录，又有待同步的 source 标准目录 | `data-dir` + `source-data-dir` | 容器外更新 source，WeLink 内手动同步 |
+
+明确禁止：
+
+- 直接把 `xwechat_files` 根目录当 `source-data-dir`
+- `manual-sync` 下把 `source` 和 `analysis` 指到同一路径
+
+## 5. `.env` 模板
+
+最推荐直接让脚本生成 `.env`。如果你必须手写，请参考仓库根的 [`.env.example`](../.env.example)。
+
+最小 `analysis-only`：
+
+```env
+WELINK_MODE=analysis-only
+WELINK_ANALYSIS_DATA_DIR=/absolute/path/to/analysis_standard_dir
+WELINK_DATA_DIR=/absolute/path/to/analysis_standard_dir
+WELINK_SOURCE_DATA_DIR=
+WELINK_WORK_DIR=./.tmp/welink-workdir
+WELINK_MSG_DIR=
+WELINK_WECHAT_DECRYPT_DIR=
+WELINK_INGEST_ENABLED=false
+WELINK_DECRYPT_ENABLED=false
+WELINK_DECRYPT_AUTO_START=false
+WELINK_SYNC_ENABLED=false
+```
+
+切到 `manual-sync` 时，最少改：
+
+```env
+WELINK_MODE=manual-sync
+WELINK_SOURCE_DATA_DIR=/absolute/path/to/source_standard_dir
+```
+
+## 6. AI 验收检查顺序
+
+启动完成后，固定按这个顺序检查：
+
+```bash
+curl http://localhost:8080/api/health
 curl http://localhost:8080/api/system/config-check
 curl http://localhost:8080/api/system/runtime
 curl http://localhost:8080/api/system/logs
 ```
 
-## 6. 红色阻塞错误什么时候会出现
+建议理解为：
 
-| 场景 | 是否红色阻塞 | 说明 |
+1. `health`：服务是否活着
+2. `config-check`：目录和模式是否正确
+3. `runtime`：索引是否就绪、最近错误是什么
+4. `logs`：如果失败，具体失败点在哪里
+
+## 7. 什么情况下会出现红色阻塞错误
+
+| 场景 | 是否阻塞 | 说明 |
 |---|---|---|
-| `analysis-only` + `source` 为空 + `analysis` 就绪 | 否 | 正常可用状态，不是错误 |
-| `manual-sync` + `source` 不是标准目录 | 是 | 必须包含 `contact/contact.db` 与 `message/message_*.db` |
-| `manual-sync` + `source/analysis` 同目录 | 是 | 会污染分析目录，后端会阻止启动 |
-| `manual-sync` + `work_dir` 不可写 | 是 | 内置 stage 无法运行 |
+| `analysis-only` + `source` 留空 + `analysis` 就绪 | 否 | 正常可用，不是错误 |
+| `manual-sync` + `source` 不是标准目录 | 是 | 必须包含 `contact/contact.db` 和 `message/message_*.db` |
+| `manual-sync` + `source/analysis` 同目录 | 是 | 会污染分析目录 |
+| `work_dir` 不可写 | 是 | 内置 stage 无法运行 |
+| `msg` 缺失 | 否 | 只影响媒体体验，不影响文本分析 |
+| `wechat-decrypt` 缺失 | 否 | 只影响 V2 图片自动取 key |
 
-## 7. Docker 场景常见错误
+## 8. 最常见的 5 个坑
 
-### 报错：`no contact/message databases found under /app/source-data`
+### 1) 把 `xwechat_files` 根目录传给 `source`
 
-原因通常是：
+这不是标准目录，会报：
 
-- 你把 `xwechat_files` 根目录挂成了 source
-- 该目录不符合标准契约（缺少 `contact/message`）
+- `缺少 contact/contact.db`
+- `缺少 message/message_*.db`
+- `source_data_dir 不是标准目录`
 
-处理：
+### 2) Windows 没先执行 `Set-ExecutionPolicy`
 
-- 容器外先整理成标准目录，再挂载到 `WELINK_ANALYSIS_DATA_DIR`
-- Docker 手动同步模式下建议保持 `WELINK_SOURCE_DATA_DIR` 为空
+PowerShell 会直接阻止脚本运行。
 
-### source / analysis 指向同一路径
+### 3) Windows 没装 Python 3
 
-这会导致同步与分析互相污染，后端会阻止启动并返回可执行错误说明。请分离目录或保持 source 为空（手动同步模式）。
+`welink-doctor.ps1` 依赖 `py -3` 或 `python`。
 
-### 端口冲突
+### 4) `source` / `analysis` 用了同一个目录
 
-```bash
-lsof -nP -iTCP:8080 -sTCP:LISTEN
-lsof -nP -iTCP:3000 -sTCP:LISTEN
-```
+后端会阻止这种配置。
 
-然后修改 `.env`：
+### 5) 图片一直显示 `[图片]`
 
-```env
-WELINK_BACKEND_PORT=18080
-WELINK_FRONTEND_PORT=13000
-```
+优先检查：
 
-### Docker Desktop 挂载失败
+- `msg` 目录是否正确
+- `wechat-decrypt` 工具目录是否正确
+- 工具目录里是否已经生成 `image_keys.json`
 
-- macOS: 确认目录已在 Docker Desktop 文件共享列表中
-- Windows: 确认盘符授权、路径使用正斜杠（`C:/...`）
+## 9. Docker 与图片 / `sns.db`
 
-## 8. 容器外工具边界（重要）
+当前仓库链路已验证：
 
-Docker 模式下，WeLink 不负责在容器内抓取微信原始目录或执行平台特定抓取逻辑。
+- `ylytdeng/wechat-decrypt` 可产出 `sns/sns.db`
+- WeLink 可自动读取 `image_keys.json`
+- 若图片只有缩略图 key，聊天记录也会优先回退展示缩略图，而不是完全失效
 
-建议流程：
+如果你只关心文本分析，可以完全不配置 `msg` / `wechat-decrypt`。
 
-1. 容器外工具生成标准目录（`contact/message`，可选 `sns`）
-2. Docker 启动 WeLink
-3. 在系统页执行“校验并同步标准目录”或手动重建索引
+## 10. 平台差异文档
 
-## 9. 与其他文档的关系
-
-- macOS 平台流程：[setup-macos.md](./setup-macos.md)
-- Windows 平台流程：[setup-windows.md](./setup-windows.md)
-- 目录契约与排障详情：[data-layout-and-troubleshooting.md](./data-layout-and-troubleshooting.md)
-- API 文档：[api.md](./api.md)
+- macOS：[`setup-macos.md`](./setup-macos.md)
+- Windows：[`setup-windows.md`](./setup-windows.md)
+- 数据目录与排障：[`data-layout-and-troubleshooting.md`](./data-layout-and-troubleshooting.md)
