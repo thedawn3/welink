@@ -96,6 +96,9 @@ func TestSystemConfigCheckEndpointReportsLayoutAndSNS(t *testing.T) {
 	if deployment, _ := payload["deployment_target"].(string); strings.TrimSpace(deployment) == "" {
 		t.Fatalf("expected deployment target, got %#v", payload["deployment_target"])
 	}
+	if canStart, _ := payload["can_start_sync"].(bool); !canStart {
+		t.Fatalf("expected can_start_sync=true, got %#v", payload["can_start_sync"])
+	}
 
 	source, ok := payload["source_dir"].(map[string]any)
 	if !ok {
@@ -114,6 +117,9 @@ func TestSystemConfigCheckEndpointReportsLayoutAndSNS(t *testing.T) {
 	}
 	if detected, _ := sns["detected"].(bool); !detected {
 		t.Fatalf("expected sns detected=true, got %#v", sns["detected"])
+	}
+	if primary, _ := payload["primary_issue"].(string); strings.TrimSpace(primary) != "" {
+		t.Fatalf("expected empty primary_issue, got %#v", payload["primary_issue"])
 	}
 }
 
@@ -151,8 +157,13 @@ func TestHandleStartDecryptRejectsInvalidSourceLayout(t *testing.T) {
 		t.Fatalf("decode payload: %v", err)
 	}
 	msg, _ := payload["error"].(string)
-	if !strings.Contains(msg, "source_data_dir 不是标准目录") {
+	if !strings.Contains(msg, "source 目录不是标准目录") {
 		t.Fatalf("expected source layout error, got %#v", payload["error"])
+	}
+	if configCheck, ok := payload["config_check"].(map[string]any); ok {
+		if primary, _ := configCheck["primary_issue"].(string); !strings.Contains(primary, "source 目录不是标准目录") {
+			t.Fatalf("expected primary_issue, got %#v", configCheck["primary_issue"])
+		}
 	}
 }
 
@@ -202,11 +213,46 @@ func TestSystemConfigCheckReportsDockerManualStageIssues(t *testing.T) {
 	if payload.SourceDir.StandardLayout {
 		t.Fatalf("expected source dir to be non-standard, got %+v", payload.SourceDir)
 	}
-	if payload.Decrypt.Supported {
-		t.Fatalf("expected decrypt to be unsupported, got %+v", payload.Decrypt)
+	if payload.CanStartSync {
+		t.Fatalf("expected can_start_sync=false, got %+v", payload)
 	}
-	if payload.Sync.Supported {
-		t.Fatalf("expected sync to be unsupported in docker manual-stage, got %+v", payload.Sync)
+	if !strings.Contains(payload.PrimaryIssue, "source 目录不是标准目录") {
+		t.Fatalf("expected primary issue to mention standard layout, got %+v", payload)
+	}
+}
+
+func TestSystemConfigCheckReportsAnalysisOnlyAsNeutralMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("WELINK_DEPLOYMENT_TARGET", "docker")
+	t.Setenv("WELINK_MODE", "analysis-only")
+
+	analysisDir := t.TempDir()
+	mustWriteFile(t, filepath.Join(analysisDir, "contact", "contact.db"), "contact")
+	mustWriteFile(t, filepath.Join(analysisDir, "message", "message_0.db"), "message")
+
+	cfg := &config.Config{}
+	cfg.Ingest.AnalysisDataDir = analysisDir
+	cfg.Ingest.SourceDataDir = t.TempDir()
+	cfg.Ingest.WorkDir = t.TempDir()
+
+	rt := newSystemRuntime(cfg)
+	server := newTestSystemServer(rt)
+	defer server.Close()
+
+	var payload runtimeConfigCheck
+	fetchJSON(t, server.URL+"/api/system/config-check", &payload)
+
+	if payload.Mode != "analysis-only" {
+		t.Fatalf("expected mode=analysis-only, got %#v", payload.Mode)
+	}
+	if payload.CanStartSync {
+		t.Fatalf("expected can_start_sync=false in analysis-only, got %+v", payload)
+	}
+	if payload.PrimaryIssue != "" {
+		t.Fatalf("expected empty primary_issue in analysis-only, got %#v", payload.PrimaryIssue)
+	}
+	if strings.TrimSpace(payload.SourceDir.Path) != "" {
+		t.Fatalf("expected source_dir path to be hidden in analysis-only, got %+v", payload.SourceDir)
 	}
 }
 
@@ -774,7 +820,7 @@ func TestHandleStartDecryptWithAutoRefreshWithoutSyncManagerLogsWarning(t *testi
 	}
 }
 
-func TestHandleStopDecryptWithoutRunningTaskReturnsBadRequest(t *testing.T) {
+func TestHandleStopDecryptWithoutRunningTaskReturnsIdleOK(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rt := newSystemRuntime(&config.Config{})
@@ -791,15 +837,15 @@ func TestHandleStopDecryptWithoutRunningTaskReturnsBadRequest(t *testing.T) {
 		t.Fatalf("post stop decrypt: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
+	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected 400, got %d: %s", resp.StatusCode, string(raw))
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(raw))
 	}
 	var payload map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if got, _ := payload["error"].(string); !strings.Contains(got, "no running decrypt task") {
+	if got, _ := payload["message"].(string); !strings.Contains(got, "没有进行中的解密任务") {
 		t.Fatalf("unexpected error payload: %#v", payload)
 	}
 }
@@ -879,7 +925,7 @@ func TestHandleStopDecryptStopsRunningTask(t *testing.T) {
 	}, "decrypt task to stop cleanly")
 }
 
-func TestHandleStopDecryptCompletedTaskReturnsBadRequest(t *testing.T) {
+func TestHandleStopDecryptCompletedTaskReturnsIdleOK(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rt := newSystemRuntime(&config.Config{})
@@ -915,16 +961,16 @@ func TestHandleStopDecryptCompletedTaskReturnsBadRequest(t *testing.T) {
 		t.Fatalf("post stop decrypt: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
+	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected 400, got %d: %s", resp.StatusCode, string(raw))
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(raw))
 	}
 
 	var payload map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if got, _ := payload["error"].(string); !strings.Contains(got, "not running") {
+	if got, _ := payload["message"].(string); !strings.Contains(got, "没有进行中的解密任务") {
 		t.Fatalf("unexpected error payload: %#v", payload)
 	}
 }

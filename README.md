@@ -37,9 +37,10 @@ WeLink 把本地微信数据整理成一条完整链路：
 
 ## 统一运行时（Docker 手动同步 + 本地自动链路）
 
-当前 WeLink 内置统一运行时，支持两条模式：
+当前 WeLink 内置统一运行时，支持两条正式 Docker 模式 + 一条本地高级模式：
 
-- Docker 推荐：`analysis-only` 手动同步标准目录（安全默认）
+- Docker 推荐：`analysis-only`（安全默认，只分析）
+- Docker 推荐：`manual-sync`（校验并同步标准目录）
 - 本地原生高级模式：`decrypt-first` 自动解密 + 自动刷新
 
 统一链路核心流程：
@@ -81,6 +82,7 @@ WeLink 把本地微信数据整理成一条完整链路：
 
 WeLink 只负责目录契约、校验、分析与展示，不内嵌第三方解密核心代码。
 Docker 场景下，容器内不负责抓取微信原始目录，需由容器外工具先生成标准目录。
+当前仓库已实际验证 `ylytdeng/wechat-decrypt` 可产出 `sns/sns.db`，因此 Docker 文档与状态面按“已验证支持 SNS”处理。
 
 期望目录：
 
@@ -166,6 +168,13 @@ WELINK_INGEST_ENABLED=false
 WELINK_DECRYPT_ENABLED=false
 WELINK_DECRYPT_AUTO_START=false
 WELINK_SYNC_ENABLED=false
+```
+
+切换到 `manual-sync` 时，至少改为：
+
+```env
+WELINK_MODE=manual-sync
+WELINK_SOURCE_DATA_DIR=/absolute/path/to/source_standard_dir
 ```
 
 ### 运行时 / ingest / sync / decrypt 变量

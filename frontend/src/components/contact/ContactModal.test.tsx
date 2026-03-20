@@ -96,4 +96,47 @@ describe('ContactModal', () => {
     expect(await screen.findByText('second hit')).toBeInTheDocument();
     expect(screen.getByDisplayValue('hello')).toBeInTheDocument();
   });
+
+  it('keeps current tab and search state when the same contact object is refreshed', async () => {
+    const contact = {
+      username: 'alice',
+      nickname: 'Alice',
+      remark: '',
+      alias: '',
+      flag: 3,
+      description: '',
+      big_head_url: '',
+      small_head_url: '',
+      total_messages: 10,
+      first_message_time: '2024-01-01 10:00',
+      last_message_time: '2024-03-15 10:00',
+      first_msg: 'hello',
+    };
+
+    const { rerender } = render(
+      <ContactModal
+        contact={contact}
+        onClose={() => {}}
+        initialTab="detail"
+        refreshKey={1}
+      />
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '搜索记录' }));
+    const input = await screen.findByPlaceholderText('搜索聊天内容...');
+    fireEvent.change(input, { target: { value: 'persist me' } });
+
+    rerender(
+      <ContactModal
+        contact={{ ...contact, total_messages: 11 }}
+        onClose={() => {}}
+        initialTab="detail"
+        refreshKey={1}
+      />
+    );
+
+    expect(screen.getByPlaceholderText('搜索聊天内容...')).toHaveValue('persist me');
+    expect(screen.getByRole('button', { name: '搜索记录' })).toHaveClass('text-[#07c160]');
+    expect(fetchWordCloud).toHaveBeenCalledTimes(1);
+  });
 });

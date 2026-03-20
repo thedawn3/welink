@@ -199,6 +199,9 @@ export interface RuntimeConfigCheckSns {
 export interface RuntimeConfigCheck {
   deployment_target?: string;
   mode?: string;
+  can_start_sync?: boolean;
+  primary_issue?: string;
+  blocking_reasons?: string[];
   analysis_dir?: DirectoryValidation;
   source_dir?: DirectoryValidation;
   work_dir?: DirectoryValidation;

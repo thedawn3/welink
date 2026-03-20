@@ -147,11 +147,11 @@ function App() {
     contacts: allContacts,
     loading: contactsLoading,
     refresh: refreshContacts,
-  } = useContacts(isInitialized, 15000);
+  } = useContacts(isInitialized, false, 15000);
   const {
     stats: rawGlobalStats,
     refresh: refreshGlobalStats,
-  } = useGlobalStats(isInitialized, 15000);
+  } = useGlobalStats(isInitialized, false, 15000);
   const [allGroups, setAllGroups] = useState<GroupInfo[]>([]);
   const [relationOverview, setRelationOverview] = useState<RelationOverview | null>(null);
   const [relationOverviewLoading, setRelationOverviewLoading] = useState(false);

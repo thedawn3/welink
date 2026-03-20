@@ -84,6 +84,9 @@ type snsValidation struct {
 type runtimeConfigCheck struct {
 	DeploymentTarget string               `json:"deployment_target"`
 	Mode             string               `json:"mode"`
+	CanStartSync     bool                 `json:"can_start_sync"`
+	PrimaryIssue     string               `json:"primary_issue,omitempty"`
+	BlockingReasons  []string             `json:"blocking_reasons,omitempty"`
 	AnalysisDir      directoryValidation  `json:"analysis_dir"`
 	SourceDir        directoryValidation  `json:"source_dir"`
 	WorkDir          directoryValidation  `json:"work_dir"`
@@ -464,16 +467,16 @@ func (rt *systemRuntime) handleStopDecrypt(c *gin.Context) {
 	}
 
 	if taskID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no running decrypt task"})
+		c.JSON(http.StatusOK, gin.H{"status": "idle", "message": "当前没有进行中的解密任务"})
 		return
 	}
 	status, ok := rt.orchestrator.Status(taskID)
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "task not found"})
+		c.JSON(http.StatusOK, gin.H{"status": "idle", "message": "当前没有进行中的解密任务"})
 		return
 	}
 	if status.State != ingest.TaskStateRunning && status.State != ingest.TaskStateStopping {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "decrypt task is not running"})
+		c.JSON(http.StatusOK, gin.H{"status": "idle", "message": "当前没有进行中的解密任务", "task_id": taskID})
 		return
 	}
 	rt.store.UpdateStatus(func(status *runtimepkg.RuntimeStatus) {
@@ -705,16 +708,15 @@ func (rt *systemRuntime) resolveDecryptRequest(req decryptStartRequest) resolved
 func (rt *systemRuntime) inspectConfigCheck(req decryptStartRequest) runtimeConfigCheck {
 	resolved := rt.resolveDecryptRequest(req)
 	deploymentTarget := detectDeploymentTarget()
-	mode := "analysis-only"
-	if strings.TrimSpace(resolved.CommandText) != "" {
-		mode = "external-command"
-	} else if strings.TrimSpace(resolved.SourceDataDir) != "" || strings.TrimSpace(resolved.AnalysisDataDir) != "" || rt.cfg.Ingest.Enabled {
-		mode = "manual-stage"
-	}
+	explicitMode := normalizeRuntimeMode(os.Getenv("WELINK_MODE"))
+	mode := detectConfigCheckMode(explicitMode, resolved, rt.cfg)
 
 	analysisDir := inspectDataDir(resolved.AnalysisDataDir, "")
 	sourceDir := inspectDataDir(resolved.SourceDataDir, resolved.AnalysisDataDir)
 	workDir := inspectWorkDir(resolved.WorkDir)
+	if mode == "analysis-only" {
+		sourceDir = directoryValidation{}
+	}
 	sameDir := sourceDir.Path != "" && analysisDir.Path != "" && filepath.Clean(sourceDir.Path) == filepath.Clean(analysisDir.Path)
 	if sameDir {
 		sourceDir.SameAsAnalysis = true
@@ -746,7 +748,7 @@ func (rt *systemRuntime) inspectConfigCheck(req decryptStartRequest) runtimeConf
 	case "manual-stage":
 		if sourceDir.Path == "" {
 			decrypt.Supported = false
-			decrypt.Issues = append(decrypt.Issues, "未配置 source_data_dir 标准目录")
+			decrypt.Warnings = append(decrypt.Warnings, "未配置 source_data_dir，当前只能分析已有 analysis 目录")
 		}
 		if !sourceDir.Exists && sourceDir.Path != "" {
 			decrypt.Supported = false
@@ -808,18 +810,27 @@ func (rt *systemRuntime) inspectConfigCheck(req decryptStartRequest) runtimeConf
 	}
 	check.Issues = dedupeStrings(append(append(append(append([]string{}, analysisDir.Issues...), sourceDir.Issues...), workDir.Issues...), append(decrypt.Issues, append(syncStatus.Issues, sns.Issues...)...)...))
 	check.Warnings = dedupeStrings(append(append(append([]string{}, decrypt.Warnings...), syncStatus.Warnings...), sns.Warnings...))
+	check.BlockingReasons = buildBlockingReasons(check)
+	check.CanStartSync = check.Mode != "analysis-only" && len(check.BlockingReasons) == 0
+	if len(check.BlockingReasons) > 0 {
+		check.PrimaryIssue = check.BlockingReasons[0]
+	}
 	return check
 }
 
 func (rt *systemRuntime) validateDecryptStart(req decryptStartRequest) (decryptValidationResult, error) {
 	check := rt.inspectConfigCheck(req)
-	if !check.Decrypt.Supported {
-		return decryptValidationResult{ConfigCheck: check}, fmt.Errorf(firstNonEmpty(check.Decrypt.Issues...))
+	if !check.CanStartSync {
+		return decryptValidationResult{ConfigCheck: check}, fmt.Errorf(firstNonEmpty(
+			check.PrimaryIssue,
+			firstNonEmpty(check.BlockingReasons...),
+			"当前处于只分析模式；如需手动同步，请配置标准 source 目录并切换到 manual-sync 模式",
+		))
 	}
 	resolved := rt.resolveDecryptRequest(req)
 	if req.AutoRefresh != nil && *req.AutoRefresh && !check.Sync.Supported &&
 		check.DeploymentTarget == "docker" && check.Mode == "manual-stage" {
-		return decryptValidationResult{ConfigCheck: check}, fmt.Errorf(firstNonEmpty(check.Sync.Issues...))
+		return decryptValidationResult{ConfigCheck: check}, fmt.Errorf(firstNonEmpty(check.PrimaryIssue, firstNonEmpty(check.Sync.Issues...)))
 	}
 	opts, err := rt.buildDecryptStartOptions(req)
 	if err != nil {
@@ -1041,6 +1052,78 @@ func buildSuggestedActions(
 		actions = append(actions, sync.Issues[0])
 	}
 	return dedupeStrings(actions)
+}
+
+func normalizeRuntimeMode(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "analysis-only", "manual-sync", "decrypt-first":
+		return strings.TrimSpace(strings.ToLower(value))
+	default:
+		return ""
+	}
+}
+
+func detectConfigCheckMode(explicitMode string, resolved resolvedDecryptRequest, cfg *config.Config) string {
+	switch explicitMode {
+	case "analysis-only":
+		return "analysis-only"
+	case "manual-sync":
+		return "manual-stage"
+	case "decrypt-first":
+		if strings.TrimSpace(resolved.CommandText) != "" {
+			return "external-command"
+		}
+		return "manual-stage"
+	}
+
+	if strings.TrimSpace(resolved.CommandText) != "" {
+		return "external-command"
+	}
+	if strings.TrimSpace(resolved.SourceDataDir) != "" || cfg.Ingest.Enabled || cfg.Decrypt.Enabled || cfg.Sync.Enabled {
+		return "manual-stage"
+	}
+	return "analysis-only"
+}
+
+func buildBlockingReasons(check runtimeConfigCheck) []string {
+	reasons := make([]string, 0, 6)
+
+	switch check.Mode {
+	case "analysis-only":
+		return nil
+	case "manual-stage":
+		sourcePath := strings.TrimSpace(check.SourceDir.Path)
+		analysisPath := strings.TrimSpace(check.AnalysisDir.Path)
+		if sourcePath == "" {
+			return nil
+		}
+		if check.SourceDir.Exists && !check.SourceDir.StandardLayout {
+			reasons = append(reasons, "source 目录不是标准目录，必须包含 contact/contact.db 与 message/message_*.db")
+		}
+		if check.SourceDir.Exists == false {
+			reasons = append(reasons, "source 目录不存在")
+		}
+		if sourcePath != "" && analysisPath != "" && filepath.Clean(sourcePath) == filepath.Clean(analysisPath) {
+			reasons = append(reasons, "source_dir 与 analysis_dir 不能是同一目录")
+		}
+		if check.WorkDir.Writable == false {
+			reasons = append(reasons, "work_dir 不可写")
+		}
+		return dedupeStrings(reasons)
+	case "external-command":
+		if !check.Decrypt.Supported {
+			reasons = append(reasons, firstNonEmpty(check.Decrypt.Issues...))
+		}
+		if check.WorkDir.Writable == false {
+			reasons = append(reasons, "work_dir 不可写")
+		}
+		return dedupeStrings(reasons)
+	default:
+		if !check.Decrypt.Supported {
+			reasons = append(reasons, firstNonEmpty(check.Decrypt.Issues...))
+		}
+		return dedupeStrings(reasons)
+	}
 }
 
 func (rt *systemRuntime) analysisDataDir() string {

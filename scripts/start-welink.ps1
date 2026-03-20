@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('analysis-only', 'decrypt-first')]
+  [ValidateSet('analysis-only', 'manual-sync', 'decrypt-first')]
   [string]$Mode = $(if ($env:WELINK_MODE) { $env:WELINK_MODE } else { 'analysis-only' }),
   [string]$Platform = $(if ($env:WELINK_PLATFORM) { $env:WELINK_PLATFORM } else { 'auto' }),
   [string]$DataDir = $(if ($env:WELINK_ANALYSIS_DATA_DIR) { $env:WELINK_ANALYSIS_DATA_DIR } else { $env:WELINK_DATA_DIR }),

@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('analysis-only', 'decrypt-first')]
+  [ValidateSet('analysis-only', 'manual-sync', 'decrypt-first')]
   [string]$Mode = 'analysis-only',
   [string]$Platform = 'auto',
   [string]$DataDir = '',

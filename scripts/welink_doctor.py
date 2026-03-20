@@ -169,7 +169,8 @@ def write_env_file_v2(
     analysis_dir.mkdir(parents=True, exist_ok=True)
     analysis_value = to_env_path(analysis_dir)
     is_decrypt_first = mode == 'decrypt-first'
-    source_value = to_env_path(source_data_dir) if (is_decrypt_first and source_data_dir) else ''
+    is_manual_sync = mode == 'manual-sync'
+    source_value = to_env_path(source_data_dir) if ((is_decrypt_first or is_manual_sync) and source_data_dir) else ''
     ingest_enabled = 'true' if is_decrypt_first else 'false'
     decrypt_enabled = 'true' if is_decrypt_first else 'false'
     decrypt_auto_start = decrypt_enabled
@@ -202,7 +203,7 @@ def write_env_file_v2(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description='Validate WeLink data paths and optionally generate .env')
-    parser.add_argument('--mode', default=os.getenv('WELINK_MODE', 'analysis-only'), choices=['analysis-only', 'decrypt-first'])
+    parser.add_argument('--mode', default=os.getenv('WELINK_MODE', 'analysis-only'), choices=['analysis-only', 'manual-sync', 'decrypt-first'])
     parser.add_argument('--platform', default='auto', choices=['auto', 'macos', 'windows', 'other'])
     parser.add_argument('--data-dir')
     parser.add_argument('--source-data-dir')
@@ -240,6 +241,29 @@ def main() -> int:
         print('[welink-doctor] analysis data dir ok')
         print('[welink-doctor] docker recommendation: manual sync mode (no auto decrypt/watcher).')
         print('[welink-doctor] source data dir will remain empty in generated .env.')
+    elif mode == 'manual-sync':
+        if analysis_data_dir is None:
+            print('[welink-doctor] ERROR: manual-sync 模式下需要 analysis data dir，请用 --data-dir 指定。')
+            return 1
+        ok, issues = validate_data_dir(analysis_data_dir)
+        print(f'[welink-doctor] analysis data dir: {analysis_data_dir}')
+        if not ok:
+            for issue in issues:
+                print(f'  - {issue}')
+            return 1
+        print('[welink-doctor] analysis data dir ok')
+
+        if source_data_dir is None:
+            print('[welink-doctor] ERROR: manual-sync 模式下需要 source data dir，请用 --source-data-dir 指定标准目录。')
+            return 1
+
+        ok, issues = validate_data_dir(source_data_dir)
+        print(f'[welink-doctor] source data dir: {source_data_dir}')
+        if not ok:
+            for issue in issues:
+                print(f'  - {issue}')
+            return 1
+        print('[welink-doctor] source data dir ok')
     else:
         if source_data_dir is None:
             print('[welink-doctor] ERROR: decrypt-first 模式下需要 source data dir，请用 --source-data-dir 指定。')
@@ -289,6 +313,11 @@ def main() -> int:
         print('[welink-doctor] next (decrypt-first):')
         print('  1) docker compose up --build')
         print('  2) 通过后端 system/decrypt 接口启动解密任务')
+    elif mode == 'manual-sync':
+        print('[welink-doctor] next (manual-sync):')
+        print('  1) docker compose up --build')
+        print('  2) 通过 /api/system/config-check 校验 source / analysis / work')
+        print('  3) 在系统页点击“校验并同步标准目录”或手动重建')
     else:
         print('[welink-doctor] next (analysis-only/manual-sync):')
         print('  1) 外部工具先准备标准目录（contact/message，可选 sns）')

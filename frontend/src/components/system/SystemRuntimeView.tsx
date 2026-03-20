@@ -189,41 +189,14 @@ export const SystemRuntimeView: React.FC<SystemRuntimeViewProps> = ({
   const startBlockedReasons = useMemo(() => {
     if (!configCheck) return [];
 
-    const reasons = flattenMessages(
-      configCheck.issues,
-      configCheck.decrypt?.issues,
-      configCheck.source_dir?.issues,
-      configCheck.analysis_dir?.issues,
-      configCheck.work_dir?.issues,
+    return flattenMessages(
+      configCheck.blocking_reasons,
+      configCheck.primary_issue ? [configCheck.primary_issue] : [],
     );
-    const sourcePath = (configCheck.source_dir?.path || '').trim();
-    const analysisPath = (configCheck.analysis_dir?.path || '').trim();
-    const sourceStandard = isSourceStandard(configCheck.source_dir);
-
-    if (!sourcePath) {
-      reasons.push('未配置 source_dir，请先映射标准目录');
-    }
-    if (configCheck.source_dir?.exists === false) {
-      reasons.push('source_dir 不存在，无法同步');
-    }
-    if (sourcePath && sourceStandard === false) {
-      reasons.push('source_dir 不是标准目录（必须包含 contact/message）');
-    }
-    if (sourcePath && analysisPath && sourcePath === analysisPath) {
-      reasons.push('source_dir 与 analysis_dir 不能是同一目录');
-    }
-    if (configCheck.work_dir?.writable === false) {
-      reasons.push('work_dir 不可写，请修复挂载权限');
-    }
-    if (configCheck.decrypt?.supported === false) {
-      reasons.push('当前模式不支持解密/同步');
-    }
-
-    return Array.from(new Set(reasons));
   }, [configCheck]);
 
   const startButtonLabel = isDockerManualMode ? '校验并同步标准目录' : '启动解密';
-  const canStartDecrypt = startBlockedReasons.length === 0;
+  const canStartDecrypt = configCheck ? Boolean(configCheck.can_start_sync) : startBlockedReasons.length === 0;
 
   const configWarnings = useMemo(() => {
     if (!configCheck) return [];
@@ -237,6 +210,17 @@ export const SystemRuntimeView: React.FC<SystemRuntimeViewProps> = ({
       configCheck.sns?.warnings,
     );
   }, [configCheck]);
+
+  const sourceConfigured = Boolean((configCheck?.source_dir?.path || '').trim());
+  const isAnalysisOnlyReady = Boolean(
+    configCheck &&
+    configCheck.mode === 'analysis-only' &&
+    configCheck.analysis_dir?.exists &&
+    configCheck.analysis_dir?.has_contact &&
+    configCheck.analysis_dir?.has_message &&
+    !sourceConfigured,
+  );
+  const stopDisabled = !['running', 'stopping'].includes(String(mergedStatus.decrypt_state || '').toLowerCase());
 
   const decryptOptions = (): DecryptStartOptions => ({
     platform: platform || undefined,
@@ -289,7 +273,7 @@ export const SystemRuntimeView: React.FC<SystemRuntimeViewProps> = ({
         </div>
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-xl border border-gray-100 p-3">
-            <p className="text-xs font-semibold text-gray-500">Source 目录</p>
+            <p className="text-xs font-semibold text-gray-500">Source 标准目录</p>
             <p className="text-[11px] text-gray-500 mt-1 break-all">{valueOrDash(configCheck?.source_dir?.path)}</p>
             <p className="text-[11px] text-gray-600 mt-2">存在：{boolLabel(configCheck?.source_dir?.exists)}</p>
             <p className="text-[11px] text-gray-600">标准目录：{boolLabel(isSourceStandard(configCheck?.source_dir))}</p>
@@ -314,10 +298,15 @@ export const SystemRuntimeView: React.FC<SystemRuntimeViewProps> = ({
             <p className="text-[11px] text-gray-500 break-all">sns.db：{valueOrDash(configCheck?.sns?.db_path)}</p>
           </div>
         </div>
-        {startBlockedReasons.length > 0 && (
+        {isAnalysisOnlyReady ? (
+          <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+            <p className="text-xs font-semibold text-sky-700">当前处于只分析模式</p>
+            <p className="text-xs text-sky-700 mt-1">analysis 目录已就绪，可直接浏览数据并按需强制重建索引；如需手动同步，请额外配置标准 source 目录。</p>
+          </div>
+        ) : startBlockedReasons.length > 0 && (
           <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
             <p className="text-xs font-semibold text-red-700">当前不可启动同步</p>
-            <p className="text-xs text-red-600 mt-1">{startBlockedReasons.join('；')}</p>
+            <p className="text-xs text-red-600 mt-1">{startBlockedReasons[0]}</p>
           </div>
         )}
         {configWarnings.length > 0 && (
@@ -360,7 +349,13 @@ export const SystemRuntimeView: React.FC<SystemRuntimeViewProps> = ({
           </button>
           <button
             onClick={onStopDecrypt}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1d1d1f] text-white text-sm font-semibold hover:bg-[#333] transition"
+            disabled={stopDisabled}
+            title={stopDisabled ? '当前没有运行中的解密任务' : undefined}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${
+              stopDisabled
+                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                : 'bg-[#1d1d1f] text-white hover:bg-[#333]'
+            }`}
           >
             <Square size={16} /> 停止解密
           </button>

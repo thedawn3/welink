@@ -189,31 +189,48 @@ export const ContactModal: React.FC<ContactModalProps> = ({
   }, []);
 
   useEffect(() => {
-    if (contact) {
-      lastRefreshKeyRef.current = refreshKey === undefined || refreshKey === null
-        ? ''
-        : `${contact.username}:${String(refreshKey)}`;
-      setTab(initialTab);
-      setDetail(null);
-      setSentiment(null);
-      setRelationDetail(null);
-      setControversyDetail(null);
-      setSelectedLabel(initialControversyLabel);
-      setAnalysisMode(initialControversyLabel ? 'controversy' : 'objective');
-      setTimelineFocus(null);
-      setIncludeMine(true);
-      setCommonGroups([]);
-      setSearchQuery('');
-      setSearchResults([]);
-      setSearchDone(false);
-      fetchWordCloud(contact.username, true);
-      fetchDetail(contact.username);
-      fetchSentiment(contact.username, true);
-      fetchRelationDetail(contact.username);
-      fetchControversyDetail(contact.username);
-      contactsApi.getCommonGroups(contact.username).then(setCommonGroups).catch(() => {});
+    if (!contact) {
+      prevContactRef.current = null;
+      return;
     }
-  }, [contact, initialTab, initialControversyLabel, fetchWordCloud, fetchDetail, fetchSentiment, fetchRelationDetail, fetchControversyDetail]);
+    const prevUsername = prevContactRef.current?.username;
+    const contactChanged = prevUsername !== contact.username;
+    prevContactRef.current = contact;
+
+    if (!contactChanged) {
+      return;
+    }
+
+    lastRefreshKeyRef.current = refreshKey === undefined || refreshKey === null
+      ? ''
+      : `${contact.username}:${String(refreshKey)}`;
+    setTab(initialTab);
+    setDetail(null);
+    setSentiment(null);
+    setRelationDetail(null);
+    setControversyDetail(null);
+    setSelectedLabel(initialControversyLabel);
+    setAnalysisMode(initialControversyLabel ? 'controversy' : 'objective');
+    setTimelineFocus(null);
+    setIncludeMine(true);
+    setCommonGroups([]);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchDone(false);
+    fetchWordCloud(contact.username, true);
+    fetchDetail(contact.username);
+    fetchSentiment(contact.username, true);
+    fetchRelationDetail(contact.username);
+    fetchControversyDetail(contact.username);
+    contactsApi.getCommonGroups(contact.username).then(setCommonGroups).catch(() => {});
+  }, [contact, initialTab, initialControversyLabel, refreshKey, fetchWordCloud, fetchDetail, fetchSentiment, fetchRelationDetail, fetchControversyDetail]);
+
+  useEffect(() => {
+    if (!contact) return;
+    setTab(initialTab);
+    setSelectedLabel(initialControversyLabel);
+    setAnalysisMode(initialControversyLabel ? 'controversy' : 'objective');
+  }, [contact?.username, initialTab, initialControversyLabel]);
 
   const handleSearch = useCallback(async (q: string) => {
     if (!contact || !q.trim()) return;

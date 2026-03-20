@@ -15,6 +15,7 @@ WeLink 消费的标准目录如下：
 
 - `contact/contact.db` 与 `message/message_*.db` 为必需
 - `sns/sns.db` 为可选，但会参与目录校验与状态展示
+- `ylytdeng/wechat-decrypt` 已在当前机器链路实测可产出 `sns/sns.db`
 - 目录可来自任意容器外工具，WeLink 只负责消费标准结构
 
 ## 2. 关键环境变量
@@ -39,12 +40,33 @@ WELINK_SYNC_ENABLED=false
 
 含义：
 
-- `WELINK_ANALYSIS_DATA_DIR`: 分析读取目录（核心）
-- `WELINK_SOURCE_DATA_DIR`: ingest/decrypt 读取目录；Docker 手动同步模式建议留空
-- `WELINK_WORK_DIR`: stage 临时目录（可写）
-- `WELINK_MSG_DIR`: 媒体目录（可选）
+- `WELINK_ANALYSIS_DATA_DIR`: analysis directory（核心）
+- `WELINK_SOURCE_DATA_DIR`: source standard directory；`analysis-only` 下留空，`manual-sync` 下指向标准目录
+- `WELINK_WORK_DIR`: work directory（可写）
+- `WELINK_MSG_DIR`: media directory（可选）
+
+如果要切换到 `manual-sync`：
+
+```env
+WELINK_MODE=manual-sync
+WELINK_SOURCE_DATA_DIR=/absolute/path/to/source_standard_dir
+WELINK_INGEST_ENABLED=false
+WELINK_DECRYPT_ENABLED=false
+WELINK_DECRYPT_AUTO_START=false
+WELINK_SYNC_ENABLED=false
+```
 
 ## 3. 常见错误与修复
+
+### `analysis-only + source 为空`
+
+这是正常状态，不是错误。
+
+表现：
+
+- 系统页显示“当前处于只分析模式”
+- 可直接浏览已有 analysis directory
+- 如需同步，改用 `manual-sync`
 
 ### `source` 指向了原始 `xwechat_files` 根目录
 

@@ -6,8 +6,8 @@
 |---|---|
 | [setup-macos.md](./setup-macos.md) | macOS 全流程：导入、解密准备、目录校验、启动 |
 | [setup-windows.md](./setup-windows.md) | Windows 全流程：导入、解密准备、目录校验、启动 |
-| [deploy-docker.md](./deploy-docker.md) | Docker 主文档：手动同步标准目录模式、source/analysis/work/msg 映射、`config-check -> runtime -> logs` 排障顺序 |
-| [data-layout-and-troubleshooting.md](./data-layout-and-troubleshooting.md) | 标准目录契约（含可选 `sns/sns.db`）、环境变量语义、典型错误与修复 |
+| [deploy-docker.md](./deploy-docker.md) | Docker 主文档：`analysis-only` / `manual-sync` 两种正式模式、source/analysis/work/media 映射、`config-check -> runtime -> logs` 排障顺序 |
+| [data-layout-and-troubleshooting.md](./data-layout-and-troubleshooting.md) | 标准目录契约（含已验证支持的 `sns/sns.db`）、环境变量语义、典型错误与修复 |
 | [../README.md](../README.md) | 统一运行时、系统页、SSE `/api/events`、自动解密/刷新、ChatLab 导出总览（含新 env/config 字段） |
 | [../mcp-server/README.md](../mcp-server/README.md) | MCP 接入：让 AI 直接查询本地聊天数据 |
 

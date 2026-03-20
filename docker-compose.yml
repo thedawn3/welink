@@ -13,6 +13,7 @@ services:
       - ./config.yaml:/app/config.yaml:ro
     environment:
       - GIN_MODE=${WELINK_GIN_MODE:-release}
+      - WELINK_MODE=${WELINK_MODE:-analysis-only}
       - WELINK_DATA_DIR=/app/analysis-data
       - WELINK_SOURCE_DATA_DIR=/app/source-data
       - WELINK_ANALYSIS_DATA_DIR=/app/analysis-data
